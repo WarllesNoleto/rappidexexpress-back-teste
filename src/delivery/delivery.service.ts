@@ -209,74 +209,9 @@ export class DeliveryService implements OnModuleInit {
 
     const skip = (queryParams.page - 1) * queryParams.itemsPerPage;
     const take = queryParams.itemsPerPage;
-    const where = { isActive: true };
-    let deliveries;
-    let count;
+    const where = this.buildDeliveriesWhere(userForRequest, queryParams);
 
-    where['establishment.cityId'] = userForRequest.cityId;
-
-    if (
-      userForRequest.type === UserType.ADMIN ||
-      userForRequest.type === UserType.SUPERADMIN
-    ) {
-      if (queryParams.status)
-        where['status'] = { $in: queryParams.status.split(',') };
-      if (queryParams.establishmentId)
-        where['establishment.id'] = queryParams.establishmentId;
-      if (queryParams.motoboyId) where['motoboy.id'] = queryParams.motoboyId;
-      if (queryParams.createdBy) where['createdBy'] = queryParams.createdBy;
-    }
-
-    if (userForRequest.type === UserType.MOTOBOY) {
-      if (queryParams.status) {
-        const arrayOnStatus = queryParams.status.split(',');
-        where['status'] = { $in: arrayOnStatus };
-
-        // Se tiver um momento em que for necessario que o motoboy solicite todos os pedidos, ele vai conseguir ver tudo
-        if (!arrayOnStatus.includes(StatusDelivery.PENDING)) {
-          where['motoboy.id'] = userForRequest.id;
-        }
-      } else {
-        where['motoboy.id'] = userForRequest.id;
-      }
-
-      if (queryParams.establishmentId)
-        where['establishment.id'] = queryParams.establishmentId;
-    }
-
-    //Lojistaadmin pode ver o mesmo que o lojista normal, unica diferença é que eles podem atribuir uma entrega ao motoboy
-    if (
-      userForRequest.type === UserType.SHOPKEEPER ||
-      userForRequest.type === UserType.SHOPKEEPERADMIN
-    ) {
-      where['establishment.id'] = userForRequest.id;
-      if (queryParams.status)
-        where['status'] = { $in: queryParams.status.split(',') };
-      if (queryParams.motoboyId) where['motoboy.id'] = queryParams.motoboyId;
-    }
-
-    // if (queryParams.hasOwnProperty('isActive')) {
-    //   where['isActive'] = queryParams.isActive ? true : false;
-    // }
-
-    if (queryParams.createdIn && queryParams.createdUntil) {
-      const createdAtDateFilter = {
-        $gte: new Date(queryParams.createdIn),
-        $lt: new Date(queryParams.createdUntil),
-      };
-      const createdAtStringFilter = {
-        $gte: queryParams.createdIn,
-        $lt: queryParams.createdUntil,
-      };
-
-      // Garante compatibilidade: aceita registros Date (novos) e string (legados).
-      where['$or'] = [
-        { createdAt: createdAtDateFilter },
-        { createdAt: createdAtStringFilter },
-      ];
-    }
-
-    [deliveries, count] = await Promise.all([
+    const [deliveries, count] = await Promise.all([
       this.deliveryRepository.find({
         relations: { motoboy: true, establishment: true },
         where,
@@ -293,6 +228,28 @@ export class DeliveryService implements OnModuleInit {
       queryParams.page,
       count,
     );
+  }
+
+  async getDashboardCounts(user: UserRequest) {
+    const userForRequest = await this.findOneUserById(user.id);
+
+    const pendingWhere = this.buildDeliveriesWhere(userForRequest, {
+      status: StatusDelivery.PENDING,
+    } as ListDeliveriesQueryDTO);
+
+    const assignedWhere = this.buildDeliveriesWhere(userForRequest, {
+      status: `${StatusDelivery.ONCOURSE},${StatusDelivery.COLLECTED}`,
+    } as ListDeliveriesQueryDTO);
+
+    const [pending, assigned] = await Promise.all([
+      this.deliveryRepository.count(pendingWhere),
+      this.deliveryRepository.count(assignedWhere),
+    ]);
+
+    return {
+      pending,
+      assigned,
+    };
   }
 
   async updateDelivery(
@@ -892,5 +849,77 @@ export class DeliveryService implements OnModuleInit {
     );
 
     console.log('=== FIM NOTIFICAÇÃO DE NOVO PEDIDO ===');
+  }
+
+  private buildDeliveriesWhere(
+    userForRequest: UserEntity,
+    queryParams: ListDeliveriesQueryDTO,
+  ) {
+    const where: Record<string, any> = { isActive: true };
+
+    where['establishment.cityId'] = userForRequest.cityId;
+
+    if (
+      userForRequest.type === UserType.ADMIN ||
+      userForRequest.type === UserType.SUPERADMIN
+    ) {
+      if (queryParams.status)
+        where['status'] = { $in: queryParams.status.split(',') };
+      if (queryParams.establishmentId)
+        where['establishment.id'] = queryParams.establishmentId;
+      if (queryParams.motoboyId) where['motoboy.id'] = queryParams.motoboyId;
+      if (queryParams.createdBy) where['createdBy'] = queryParams.createdBy;
+    }
+
+    if (userForRequest.type === UserType.MOTOBOY) {
+      if (queryParams.status) {
+        const arrayOnStatus = queryParams.status.split(',');
+        where['status'] = { $in: arrayOnStatus };
+
+        // Se tiver um momento em que for necessario que o motoboy solicite todos os pedidos, ele vai conseguir ver tudo
+        if (!arrayOnStatus.includes(StatusDelivery.PENDING)) {
+          where['motoboy.id'] = userForRequest.id;
+        }
+      } else {
+        where['motoboy.id'] = userForRequest.id;
+      }
+
+      if (queryParams.establishmentId)
+        where['establishment.id'] = queryParams.establishmentId;
+    }
+
+    //Lojistaadmin pode ver o mesmo que o lojista normal, unica diferença é que eles podem atribuir uma entrega ao motoboy
+    if (
+      userForRequest.type === UserType.SHOPKEEPER ||
+      userForRequest.type === UserType.SHOPKEEPERADMIN
+    ) {
+      where['establishment.id'] = userForRequest.id;
+      if (queryParams.status)
+        where['status'] = { $in: queryParams.status.split(',') };
+      if (queryParams.motoboyId) where['motoboy.id'] = queryParams.motoboyId;
+    }
+
+    // if (queryParams.hasOwnProperty('isActive')) {
+    //   where['isActive'] = queryParams.isActive ? true : false;
+    // }
+
+    if (queryParams.createdIn && queryParams.createdUntil) {
+      const createdAtDateFilter = {
+        $gte: new Date(queryParams.createdIn),
+        $lt: new Date(queryParams.createdUntil),
+      };
+      const createdAtStringFilter = {
+        $gte: queryParams.createdIn,
+        $lt: queryParams.createdUntil,
+      };
+
+      // Garante compatibilidade: aceita registros Date (novos) e string (legados).
+      where['$or'] = [
+        { createdAt: createdAtDateFilter },
+        { createdAt: createdAtStringFilter },
+      ];
+    }
+
+    return where;
   }
 }

@@ -99,6 +99,20 @@ export class DeliveryController {
     return await this.deliveryService.listDeliveries(user, queryParams);
   }
 
+  @Get('counts')
+  @ApiOperation({
+    operationId: 'GetDashboardDeliveryCounts',
+    summary: 'Get dashboard counters for pending and assigned deliveries',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Dashboard delivery counters.',
+  })
+  @UseGuards(JwtAuthGuard)
+  async getDashboardCounts(@User() user: UserRequest) {
+    return await this.deliveryService.getDashboardCounts(user);
+  }
+
   @Delete(':deliveryId')
   @ApiOperation({
     operationId: 'DeleteDelivery',
