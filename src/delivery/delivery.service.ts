@@ -201,6 +201,60 @@ export class DeliveryService implements OnModuleInit {
     });
   }
 
+  private notifyNewDeliveryInBackground(
+    newDelivery: DeliveryEntity,
+    deliveryStatus: StatusDelivery,
+    establishment: UserEntity,
+    motoboy: UserEntity | null,
+    userFinded: UserEntity,
+  ) {
+    const newLog = {
+      id: uuid(),
+      where: 'Criação de um delivery',
+      type: 'Log para notificações',
+      error: 'Sem error',
+      user: userFinded,
+      status: 'Notificação enviada.',
+    };
+
+    const notifyPromise =
+      deliveryStatus !== StatusDelivery.ONCOURSE
+        ? this.sendNotificationsToMotoboys(
+            newDelivery.establishment.name,
+            newDelivery.establishment.cityId,
+          )
+        : this.sendAssignedMotoboyNotification(establishment, motoboy);
+
+    void notifyPromise.catch(async (error) => {
+      newLog.error = `${error}`;
+      newLog.status = 'Notificação não enviada devido ao error';
+
+      try {
+        await this.logRepository.save(newLog);
+      } catch (logError: any) {
+        this.logger.warn(
+          `Falha ao salvar log de erro de notificação: ${logError?.message || logError}`,
+        );
+      }
+    });
+  }
+
+  private async sendAssignedMotoboyNotification(
+    establishment: UserEntity,
+    motoboy: UserEntity | null,
+  ) {
+    const subscriptionId = motoboy?.notification?.subscriptionId;
+
+    if (!subscriptionId) {
+      return;
+    }
+
+    await sendNotificationsFor(
+      [subscriptionId],
+      `Você foi atribuido a uma entrega no estabelecimento: ${establishment.name}`,
+    );
+  }
+
   async listDeliveries(
     user: UserRequest,
     queryParams: ListDeliveriesQueryDTO,
@@ -556,44 +610,15 @@ export class DeliveryService implements OnModuleInit {
         DeliveryResult.fromEntity(newDelivery),
         newDelivery.establishment?.cityId,
       );
-
-      const newLog = {
-        id: uuid(),
-        where: 'Criação de um delivery',
-        type: 'Log para notificações',
-        error: 'Sem error',
-        user: userFinded,
-        status: 'Notificação enviada.',
-      };
-
-      if (deliveryStatus != StatusDelivery.ONCOURSE) {
-        try {
-          await this.sendNotificationsToMotoboys(
-            newDelivery.establishment.name,
-            newDelivery.establishment.cityId,
-          );
-        } catch (error) {
-          newLog.error = `${error}`;
-          newLog.status = 'Notificação não enviada devido ao error';
-          await this.logRepository.save(newLog);
-        }
-      } else {
-        try {
-          const subscriptionId = motoboy?.notification?.subscriptionId;
-
-          if (subscriptionId) {
-            await sendNotificationsFor(
-              [subscriptionId],
-              `Você foi atribuido a uma entrega no estabelecimento: ${establishment.name}`,
-            );
-          }
-        } catch (error) {
-          newLog.error = `${error}`;
-          newLog.status = 'Notificação não enviada devido ao error';
-          await this.logRepository.save(newLog);
-        }
-      }
-
+      
+      this.notifyNewDeliveryInBackground(
+        newDelivery,
+        deliveryStatus,
+        establishment,
+        motoboy,
+        userFinded,
+      );
+      
       return DeliveryResult.fromEntity(newDelivery);
     } catch (error) {
       throw error;
