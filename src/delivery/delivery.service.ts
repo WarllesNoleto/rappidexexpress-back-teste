@@ -674,9 +674,8 @@ export class DeliveryService implements OnModuleInit {
   }
 
   async cancelDeliveryFromIfood(orderId: string, event?: any) {
-    const ifoodLink = await this.ifoodOrderLinkService.findByIfoodOrderId(
-      orderId,
-    );
+    const ifoodLink =
+      await this.ifoodOrderLinkService.findByIfoodOrderId(orderId);
 
     if (!ifoodLink) {
       return;

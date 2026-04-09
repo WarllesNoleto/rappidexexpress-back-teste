@@ -107,7 +107,10 @@ export class UserService {
     }
 
     if (queryParams.type) {
-      if (userFinded.type === UserType.ADMIN || userFinded.type === UserType.SUPERADMIN) {
+      if (
+        userFinded.type === UserType.ADMIN ||
+        userFinded.type === UserType.SUPERADMIN
+      ) {
         if (queryParams.type === UserType.SHOPKEEPER) {
           where = {
             ...where,
@@ -220,10 +223,7 @@ export class UserService {
       return city;
     }
 
-    if (
-      requestingUser &&
-      requestingUser.type !== UserType.SUPERADMIN
-    ) {
+    if (requestingUser && requestingUser.type !== UserType.SUPERADMIN) {
       if (!requestingUser.cityId) {
         throw new BadRequestException('Usuário não possui cidade cadastrada.');
       }
@@ -355,11 +355,7 @@ export class UserService {
             isActive: true,
             'motoboy.id': motoboy.id,
             status: {
-              $in: [
-                StatusDelivery.PENDING,
-                StatusDelivery.ONCOURSE,
-                StatusDelivery.COLLECTED,
-              ],
+              $in: [StatusDelivery.ONCOURSE, StatusDelivery.COLLECTED],
             },
           };
 
@@ -372,9 +368,8 @@ export class UserService {
             lastDeliveryWhere['establishment.cityId'] = requesterCityId;
           }
 
-          const countDeliveries = await this.deliveryRepository.count(
-            countWhere,
-          );
+          const countDeliveries =
+            await this.deliveryRepository.count(countWhere);
 
           const order = { finishedAt: 'DESC' };
           const take = 1;
@@ -401,24 +396,19 @@ export class UserService {
 
   async changeNameForMotoboy(motoboysWithDeliveriesCount) {
     const newArrayForMotoboys = [];
-    motoboysWithDeliveriesCount.map(async (motoboy) => {
+    motoboysWithDeliveriesCount.forEach((motoboy) => {
       let hour = 'sem ultima entrega';
       if (motoboy.lastDeliveryDate[0]) {
-        const dateArray = `${motoboy.lastDeliveryDate[0].finishedAt}`.split(
-          ' ',
-        );
-        hour = `${dateArray[4].substring(0, 5)} horas`;
+        const finishedAtDate = new Date(motoboy.lastDeliveryDate[0].finishedAt);
+        if (!Number.isNaN(finishedAtDate.getTime())) {
+          hour = `${finishedAtDate.toISOString().substring(11, 16)} horas`;
+        }
       }
 
       newArrayForMotoboys.push({
         name: `${motoboy.name} - ${hour}`,
         id: motoboy.id,
       });
-
-      return {
-        name: `${motoboy.name} - ${hour}`,
-        id: motoboy.id,
-      };
     });
 
     return newArrayForMotoboys;
