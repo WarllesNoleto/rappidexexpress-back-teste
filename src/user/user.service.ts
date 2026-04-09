@@ -349,104 +349,69 @@ export class UserService {
                 motoboy.cityId.toString() === requesterCityId?.toString(),
             );
 
-      const motoboyIds = scopedMotoboys.map((motoboy) => motoboy.id);
+      const motoboysWithDeliveriesCount = await Promise.all(
+        scopedMotoboys.map(async (motoboy) => {
+          const countWhere = {
+            isActive: true,
+            'motoboy.id': motoboy.id,
+            status: {
+              $in: [StatusDelivery.ONCOURSE, StatusDelivery.COLLECTED],
+            },
+          };
 
-      if (!motoboyIds.length) {
-        return [];
-      }
+          const lastDeliveryWhere = {
+            'motoboy.id': motoboy.id,
+            status: StatusDelivery.FINISHED,
+          };
+          if (requesterCityId) {
+            countWhere['establishment.cityId'] = requesterCityId;
+            lastDeliveryWhere['establishment.cityId'] = requesterCityId;
+          }
 
-      const [activeCounts, lastFinishedDeliveries] = await Promise.all([
-        this.getActiveDeliveriesCountByMotoboy(motoboyIds, requesterCityId),
-        this.getLastFinishedAtByMotoboy(motoboyIds, requesterCityId),
-      ]);
+          const countDeliveries =
+            await this.deliveryRepository.count(countWhere);
 
-      return scopedMotoboys.map((motoboy) =>
-        this.formatMotoboyNameWithStats(
-          motoboy.name,
-          activeCounts.get(motoboy.id) ?? 0,
-          lastFinishedDeliveries.get(motoboy.id),
-          motoboy.id,
-        ),
+          const order = { finishedAt: 'DESC' };
+          const take = 1;
+
+          const lastDelivery = await this.deliveryRepository.find({
+            where: lastDeliveryWhere,
+            order,
+            take,
+          });
+
+          return {
+            name: `${motoboy.name} - ${countDeliveries}`,
+            lastDeliveryDate: lastDelivery,
+            id: motoboy.id,
+          };
+        }),
       );
+
+      return await this.changeNameForMotoboy(motoboysWithDeliveriesCount);
     } catch (error) {
       return error;
     }
   }
 
-  private formatMotoboyNameWithStats(
-    name: string,
-    activeDeliveries: number,
-    finishedAt: Date | string | null,
-    id: string,
-  ) {
-    let hour = 'sem ultima entrega';
-
-    if (finishedAt) {
-      const finishedAtDate = new Date(finishedAt);
-      if (!Number.isNaN(finishedAtDate.getTime())) {
-        hour = `${finishedAtDate.toISOString().substring(11, 16)} horas`;
+  async changeNameForMotoboy(motoboysWithDeliveriesCount) {
+    const newArrayForMotoboys = [];
+    motoboysWithDeliveriesCount.forEach((motoboy) => {
+      let hour = 'sem ultima entrega';
+      if (motoboy.lastDeliveryDate[0]) {
+        const finishedAtDate = new Date(motoboy.lastDeliveryDate[0].finishedAt);
+        if (!Number.isNaN(finishedAtDate.getTime())) {
+          hour = `${finishedAtDate.toISOString().substring(11, 16)} horas`;
+        }
       }
-    }
 
-    return {
-      name: `${name} - ${activeDeliveries} - ${hour}`,
-      id,
-    };
-  }
+      newArrayForMotoboys.push({
+        name: `${motoboy.name} - ${hour}`,
+        id: motoboy.id,
+      });
+    });
 
-  private async getActiveDeliveriesCountByMotoboy(
-    motoboyIds: string[],
-    cityId?: string,
-  ) {
-    const match: Record<string, any> = {
-      isActive: true,
-      'motoboy.id': { $in: motoboyIds },
-      status: { $in: [StatusDelivery.ONCOURSE, StatusDelivery.COLLECTED] },
-    };
-
-    if (cityId) {
-      match['establishment.cityId'] = cityId;
-    }
-
-    const result = await this.deliveryRepository
-      .aggregate([
-        { $match: match },
-        { $group: { _id: '$motoboy.id', count: { $sum: 1 } } },
-      ])
-      .toArray();
-
-    return new Map<string, number>(
-      result.map((item: any) => [item._id, item.count || 0]),
-    );
-  }
-
-  private async getLastFinishedAtByMotoboy(
-    motoboyIds: string[],
-    cityId?: string,
-  ) {
-    const match: Record<string, any> = {
-      'motoboy.id': { $in: motoboyIds },
-      status: StatusDelivery.FINISHED,
-      finishedAt: { $ne: null },
-    };
-
-    if (cityId) {
-      match['establishment.cityId'] = cityId;
-    }
-
-    const result = await this.deliveryRepository
-      .aggregate([
-        { $match: match },
-        { $sort: { finishedAt: -1 } },
-        {
-          $group: { _id: '$motoboy.id', finishedAt: { $first: '$finishedAt' } },
-        },
-      ])
-      .toArray();
-
-    return new Map<string, Date | string>(
-      result.map((item: any) => [item._id, item.finishedAt]),
-    );
+    return newArrayForMotoboys;
   }
 
   async updateUserNotification(

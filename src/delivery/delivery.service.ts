@@ -209,74 +209,9 @@ export class DeliveryService implements OnModuleInit {
 
     const skip = (queryParams.page - 1) * queryParams.itemsPerPage;
     const take = queryParams.itemsPerPage;
-    const where = { isActive: true };
-    let deliveries;
-    let count;
+    const where = this.buildDeliveriesWhere(userForRequest, queryParams);
 
-    where['establishment.cityId'] = userForRequest.cityId;
-
-    if (
-      userForRequest.type === UserType.ADMIN ||
-      userForRequest.type === UserType.SUPERADMIN
-    ) {
-      if (queryParams.status)
-        where['status'] = { $in: queryParams.status.split(',') };
-      if (queryParams.establishmentId)
-        where['establishment.id'] = queryParams.establishmentId;
-      if (queryParams.motoboyId) where['motoboy.id'] = queryParams.motoboyId;
-      if (queryParams.createdBy) where['createdBy'] = queryParams.createdBy;
-    }
-
-    if (userForRequest.type === UserType.MOTOBOY) {
-      if (queryParams.status) {
-        const arrayOnStatus = queryParams.status.split(',');
-        where['status'] = { $in: arrayOnStatus };
-
-        // Se tiver um momento em que for necessario que o motoboy solicite todos os pedidos, ele vai conseguir ver tudo
-        if (!arrayOnStatus.includes(StatusDelivery.PENDING)) {
-          where['motoboy.id'] = userForRequest.id;
-        }
-      } else {
-        where['motoboy.id'] = userForRequest.id;
-      }
-
-      if (queryParams.establishmentId)
-        where['establishment.id'] = queryParams.establishmentId;
-    }
-
-    //Lojistaadmin pode ver o mesmo que o lojista normal, unica diferença é que eles podem atribuir uma entrega ao motoboy
-    if (
-      userForRequest.type === UserType.SHOPKEEPER ||
-      userForRequest.type === UserType.SHOPKEEPERADMIN
-    ) {
-      where['establishment.id'] = userForRequest.id;
-      if (queryParams.status)
-        where['status'] = { $in: queryParams.status.split(',') };
-      if (queryParams.motoboyId) where['motoboy.id'] = queryParams.motoboyId;
-    }
-
-    // if (queryParams.hasOwnProperty('isActive')) {
-    //   where['isActive'] = queryParams.isActive ? true : false;
-    // }
-
-    if (queryParams.createdIn && queryParams.createdUntil) {
-      const createdAtDateFilter = {
-        $gte: new Date(queryParams.createdIn),
-        $lt: new Date(queryParams.createdUntil),
-      };
-      const createdAtStringFilter = {
-        $gte: queryParams.createdIn,
-        $lt: queryParams.createdUntil,
-      };
-
-      // Garante compatibilidade: aceita registros Date (novos) e string (legados).
-      where['$or'] = [
-        { createdAt: createdAtDateFilter },
-        { createdAt: createdAtStringFilter },
-      ];
-    }
-
-    [deliveries, count] = await Promise.all([
+    const [deliveries, count] = await Promise.all([
       this.deliveryRepository.find({
         relations: { motoboy: true, establishment: true },
         where,
@@ -293,6 +228,28 @@ export class DeliveryService implements OnModuleInit {
       queryParams.page,
       count,
     );
+  }
+
+  async getDashboardCounts(user: UserRequest) {
+    const userForRequest = await this.findOneUserById(user.id);
+
+    const pendingWhere = this.buildDeliveriesWhere(userForRequest, {
+      status: StatusDelivery.PENDING,
+    } as ListDeliveriesQueryDTO);
+
+    const assignedWhere = this.buildDeliveriesWhere(userForRequest, {
+      status: `${StatusDelivery.ONCOURSE},${StatusDelivery.COLLECTED}`,
+    } as ListDeliveriesQueryDTO);
+
+    const [pending, assigned] = await Promise.all([
+      this.deliveryRepository.count(pendingWhere),
+      this.deliveryRepository.count(assignedWhere),
+    ]);
+
+    return {
+      pending,
+      assigned,
+    };
   }
 
   async updateDelivery(
@@ -575,12 +532,42 @@ export class DeliveryService implements OnModuleInit {
         newDelivery.establishment?.cityId,
       );
 
-      this.sendNewDeliveryNotificationsInBackground(
-        deliveryStatus,
-        newDelivery,
-        userFinded,
-        motoboy,
-      );
+      const newLog = {
+        id: uuid(),
+        where: 'Criação de um delivery',
+        type: 'Log para notificações',
+        error: 'Sem error',
+        user: userFinded,
+        status: 'Notificação enviada.',
+      };
+
+      if (deliveryStatus != StatusDelivery.ONCOURSE) {
+        try {
+          await this.sendNotificationsToMotoboys(
+            newDelivery.establishment.name,
+            newDelivery.establishment.cityId,
+          );
+        } catch (error) {
+          newLog.error = `${error}`;
+          newLog.status = 'Notificação não enviada devido ao error';
+          await this.logRepository.save(newLog);
+        }
+      } else {
+        try {
+          const subscriptionId = motoboy?.notification?.subscriptionId;
+
+          if (subscriptionId) {
+            await sendNotificationsFor(
+              [subscriptionId],
+              `Você foi atribuido a uma entrega no estabelecimento: ${establishment.name}`,
+            );
+          }
+        } catch (error) {
+          newLog.error = `${error}`;
+          newLog.status = 'Notificação não enviada devido ao error';
+          await this.logRepository.save(newLog);
+        }
+      }
 
       return DeliveryResult.fromEntity(newDelivery);
     } catch (error) {
@@ -817,6 +804,10 @@ export class DeliveryService implements OnModuleInit {
     establishmentName: string,
     cityId: string,
   ) {
+    console.log('=== INÍCIO NOTIFICAÇÃO DE NOVO PEDIDO ===');
+    console.log('Estabelecimento:', establishmentName);
+    console.log('Cidade do pedido:', cityId);
+
     const where: Record<string, unknown> = {
       type: UserType.MOTOBOY,
       isActive: true,
@@ -826,10 +817,22 @@ export class DeliveryService implements OnModuleInit {
       where['cityId'] = cityId;
     }
 
+    console.log('Filtro usado para buscar motoboys:', where);
+
     const motoboys = await this.userRepository.find({ where });
+
+    console.log('Motoboys encontrados:', motoboys.length);
 
     const motoboysNotificationsIds = motoboys
       .map((motoboy: UserEntity) => {
+        console.log('Motoboy:', {
+          id: motoboy.id,
+          name: motoboy.name,
+          cityId: motoboy.cityId,
+          isActive: motoboy.isActive,
+          subscriptionId: motoboy.notification?.subscriptionId ?? null,
+        });
+
         if (motoboy.notification && motoboy.notification.subscriptionId) {
           return motoboy.notification.subscriptionId;
         }
@@ -838,54 +841,85 @@ export class DeliveryService implements OnModuleInit {
       })
       .filter((i) => !!i);
 
+    console.log('Subscription IDs encontrados:', motoboysNotificationsIds);
+
     await sendNotificationsFor(
       motoboysNotificationsIds,
       `Nova solicitação de entrega no estabelecimento: ${establishmentName}`,
     );
+
+    console.log('=== FIM NOTIFICAÇÃO DE NOVO PEDIDO ===');
   }
 
-  private sendNewDeliveryNotificationsInBackground(
-    deliveryStatus: StatusDelivery,
-    delivery: DeliveryEntity,
-    user: UserEntity,
-    motoboy: UserEntity | null,
+  private buildDeliveriesWhere(
+    userForRequest: UserEntity,
+    queryParams: ListDeliveriesQueryDTO,
   ) {
-    void (async () => {
-      const newLog = {
-        id: uuid(),
-        where: 'Criação de um delivery',
-        type: 'Log para notificações',
-        error: 'Sem error',
-        user,
-        status: 'Notificação enviada.',
+    const where: Record<string, any> = { isActive: true };
+
+    where['establishment.cityId'] = userForRequest.cityId;
+
+    if (
+      userForRequest.type === UserType.ADMIN ||
+      userForRequest.type === UserType.SUPERADMIN
+    ) {
+      if (queryParams.status)
+        where['status'] = { $in: queryParams.status.split(',') };
+      if (queryParams.establishmentId)
+        where['establishment.id'] = queryParams.establishmentId;
+      if (queryParams.motoboyId) where['motoboy.id'] = queryParams.motoboyId;
+      if (queryParams.createdBy) where['createdBy'] = queryParams.createdBy;
+    }
+
+    if (userForRequest.type === UserType.MOTOBOY) {
+      if (queryParams.status) {
+        const arrayOnStatus = queryParams.status.split(',');
+        where['status'] = { $in: arrayOnStatus };
+
+        // Se tiver um momento em que for necessario que o motoboy solicite todos os pedidos, ele vai conseguir ver tudo
+        if (!arrayOnStatus.includes(StatusDelivery.PENDING)) {
+          where['motoboy.id'] = userForRequest.id;
+        }
+      } else {
+        where['motoboy.id'] = userForRequest.id;
+      }
+
+      if (queryParams.establishmentId)
+        where['establishment.id'] = queryParams.establishmentId;
+    }
+
+    //Lojistaadmin pode ver o mesmo que o lojista normal, unica diferença é que eles podem atribuir uma entrega ao motoboy
+    if (
+      userForRequest.type === UserType.SHOPKEEPER ||
+      userForRequest.type === UserType.SHOPKEEPERADMIN
+    ) {
+      where['establishment.id'] = userForRequest.id;
+      if (queryParams.status)
+        where['status'] = { $in: queryParams.status.split(',') };
+      if (queryParams.motoboyId) where['motoboy.id'] = queryParams.motoboyId;
+    }
+
+    // if (queryParams.hasOwnProperty('isActive')) {
+    //   where['isActive'] = queryParams.isActive ? true : false;
+    // }
+
+    if (queryParams.createdIn && queryParams.createdUntil) {
+      const createdAtDateFilter = {
+        $gte: new Date(queryParams.createdIn),
+        $lt: new Date(queryParams.createdUntil),
+      };
+      const createdAtStringFilter = {
+        $gte: queryParams.createdIn,
+        $lt: queryParams.createdUntil,
       };
 
-      try {
-        if (deliveryStatus !== StatusDelivery.ONCOURSE) {
-          await this.sendNotificationsToMotoboys(
-            delivery.establishment.name,
-            delivery.establishment.cityId,
-          );
-          return;
-        }
+      // Garante compatibilidade: aceita registros Date (novos) e string (legados).
+      where['$or'] = [
+        { createdAt: createdAtDateFilter },
+        { createdAt: createdAtStringFilter },
+      ];
+    }
 
-        const subscriptionId = motoboy?.notification?.subscriptionId;
-
-        if (subscriptionId) {
-          await sendNotificationsFor(
-            [subscriptionId],
-            `Você foi atribuido a uma entrega no estabelecimento: ${delivery.establishment.name}`,
-          );
-        }
-      } catch (error) {
-        newLog.error = `${error}`;
-        newLog.status = 'Notificação não enviada devido ao error';
-        await this.logRepository.save(newLog);
-      }
-    })().catch((error: any) => {
-      this.logger.warn(
-        `Falha assíncrona ao enviar notificações de criação da entrega ${delivery.id}. ${error?.message || error}`,
-      );
-    });
+    return where;
   }
 }
