@@ -16,11 +16,18 @@ export class ListDeliverysResult {
   @Expose()
   count: number;
 
+  @Expose()
+  dashboardCounts?: {
+    pending: number;
+    assigned: number;
+  };
+
   static fromEntities(
     deliverys: DeliveryEntity[],
     itemsPerPage,
     page,
     count,
+    dashboardCounts?,
   ): ListDeliverysResult {
     const data = deliverys.map((user) => DeliveryResult.fromEntity(user));
     return {
@@ -28,6 +35,7 @@ export class ListDeliverysResult {
       itemsPerPage,
       data,
       count,
+      dashboardCounts,
     };
   }
 }

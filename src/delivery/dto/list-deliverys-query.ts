@@ -36,4 +36,7 @@ export class ListDeliveriesQueryDTO {
   @IsNumber()
   @IsOptional()
   itemsPerPage?: number = 100;
+
+  @IsOptional()
+  includeDashboardCounts?: boolean | string;
 }

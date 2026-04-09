@@ -211,7 +211,11 @@ export class DeliveryService implements OnModuleInit {
     const take = queryParams.itemsPerPage;
     const where = this.buildDeliveriesWhere(userForRequest, queryParams);
 
-    const [deliveries, count] = await Promise.all([
+    const shouldIncludeDashboardCounts = this.parseBooleanQuery(
+      queryParams.includeDashboardCounts,
+    );
+
+    const [deliveries, count, dashboardCounts] = await Promise.all([
       this.deliveryRepository.find({
         relations: { motoboy: true, establishment: true },
         where,
@@ -220,6 +224,9 @@ export class DeliveryService implements OnModuleInit {
         order: { createdAt: 'ASC' },
       }),
       this.deliveryRepository.count(where),
+      shouldIncludeDashboardCounts
+        ? this.getDashboardCountsByUser(userForRequest)
+        : Promise.resolve(undefined),
     ]);
 
     return ListDeliverysResult.fromEntities(
@@ -227,12 +234,17 @@ export class DeliveryService implements OnModuleInit {
       deliveries.length,
       queryParams.page,
       count,
+      dashboardCounts,
     );
   }
 
   async getDashboardCounts(user: UserRequest) {
     const userForRequest = await this.findOneUserById(user.id);
 
+    return this.getDashboardCountsByUser(userForRequest);
+  }
+
+  private async getDashboardCountsByUser(userForRequest: UserEntity) {
     const pendingWhere = this.buildDeliveriesWhere(userForRequest, {
       status: StatusDelivery.PENDING,
     } as ListDeliveriesQueryDTO);
@@ -250,6 +262,19 @@ export class DeliveryService implements OnModuleInit {
       pending,
       assigned,
     };
+  }
+
+  private parseBooleanQuery(value?: boolean | string) {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    if (typeof value !== 'string') {
+      return false;
+    }
+
+    const normalized = value.trim().toLowerCase();
+    return normalized === 'true' || normalized === '1';
   }
 
   async updateDelivery(
