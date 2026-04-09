@@ -34,19 +34,19 @@ export class DeliveryService implements OnModuleInit {
   private readonly logger = new Logger(DeliveryService.name);
   motoboysDeliveriesAmount = 2;
   blockDeliverys = false;
-    constructor(
-  @InjectRepository(UserEntity)
-  private readonly userRepository: MongoRepository<UserEntity>,
-  @InjectRepository(DeliveryEntity)
-  private readonly deliveryRepository: MongoRepository<DeliveryEntity>,
-  @InjectRepository(LogEntity)
-  private readonly logRepository: MongoRepository<LogEntity>,
-  private readonly ordersGateway: OrdersGateway,
-  @Inject(forwardRef(() => IfoodOrdersService))
-  private readonly ifoodOrdersService: IfoodOrdersService,
-  @Inject(forwardRef(() => IfoodOrderLinkService))
-  private readonly ifoodOrderLinkService: IfoodOrderLinkService,
-) {}
+  constructor(
+    @InjectRepository(UserEntity)
+    private readonly userRepository: MongoRepository<UserEntity>,
+    @InjectRepository(DeliveryEntity)
+    private readonly deliveryRepository: MongoRepository<DeliveryEntity>,
+    @InjectRepository(LogEntity)
+    private readonly logRepository: MongoRepository<LogEntity>,
+    private readonly ordersGateway: OrdersGateway,
+    @Inject(forwardRef(() => IfoodOrdersService))
+    private readonly ifoodOrdersService: IfoodOrdersService,
+    @Inject(forwardRef(() => IfoodOrderLinkService))
+    private readonly ifoodOrderLinkService: IfoodOrderLinkService,
+  ) {}
 
   private async syncIfoodIfNeeded(
     previousDelivery: DeliveryEntity,
@@ -116,7 +116,9 @@ export class DeliveryService implements OnModuleInit {
         );
 
         if (verifyResult?.success === false) {
-          throw new BadRequestException('O código de entrega do iFood é inválido.');
+          throw new BadRequestException(
+            'O código de entrega do iFood é inválido.',
+          );
         }
       }
     } catch (error: any) {
@@ -176,14 +178,16 @@ export class DeliveryService implements OnModuleInit {
     nextDelivery: DeliveryEntity,
     deliveryData: UpdateDeliveryDto,
   ) {
-    void this.syncIfoodIfNeeded(previousDelivery, nextDelivery, deliveryData).catch(
-      (error: any) => {
-        this.logger.error(
-          `Falha assíncrona ao sincronizar delivery ${previousDelivery.id} com iFood.`,
-          error?.stack || error,
-        );
-      },
-    );
+    void this.syncIfoodIfNeeded(
+      previousDelivery,
+      nextDelivery,
+      deliveryData,
+    ).catch((error: any) => {
+      this.logger.error(
+        `Falha assíncrona ao sincronizar delivery ${previousDelivery.id} com iFood.`,
+        error?.stack || error,
+      );
+    });
   }
 
   private sendStatusNotificationInBackground(
@@ -313,7 +317,10 @@ export class DeliveryService implements OnModuleInit {
 
     let changedDelivery: Record<string, any> = {};
 
-    if (userFinded.type === UserType.ADMIN || userFinded.type === UserType.SUPERADMIN) {
+    if (
+      userFinded.type === UserType.ADMIN ||
+      userFinded.type === UserType.SUPERADMIN
+    ) {
       changedDelivery = { ...deliveryFinded, ...deliveryData };
 
       if (deliveryData.establishmentId) {
@@ -403,7 +410,7 @@ export class DeliveryService implements OnModuleInit {
       }
     }
 
-            const isPendingClaimAttempt = this.isPendingClaimAttempt(
+    const isPendingClaimAttempt = this.isPendingClaimAttempt(
       deliveryFinded,
       deliveryData,
     );
@@ -457,7 +464,8 @@ export class DeliveryService implements OnModuleInit {
 
     this.ordersGateway.emitDeliveryUpdated(
       DeliveryResult.fromEntity(deliveryUpdated),
-      deliveryUpdated.establishment?.cityId ?? deliveryFinded.establishment?.cityId,
+      deliveryUpdated.establishment?.cityId ??
+        deliveryFinded.establishment?.cityId,
     );
 
     const subscriptionId =
@@ -510,15 +518,15 @@ export class DeliveryService implements OnModuleInit {
 
     let deliveryStatus = status;
 
-   if (
-  this.blockDeliverys &&
-  user.type !== UserType.ADMIN &&
-  user.type !== UserType.SUPERADMIN
-) {
-  throw new BadRequestException(
-    'Infelizmente as entregas foram encerradas por hoje.',
-  );
-}
+    if (
+      this.blockDeliverys &&
+      user.type !== UserType.ADMIN &&
+      user.type !== UserType.SUPERADMIN
+    ) {
+      throw new BadRequestException(
+        'Infelizmente as entregas foram encerradas por hoje.',
+      );
+    }
 
     if (
       (userFinded.type === UserType.ADMIN ||
@@ -544,7 +552,7 @@ export class DeliveryService implements OnModuleInit {
     }
 
     try {
-            const newDelivery = await this.deliveryRepository.save({
+      const newDelivery = await this.deliveryRepository.save({
         id: uuid(),
         clientName,
         clientPhone,
@@ -610,43 +618,81 @@ export class DeliveryService implements OnModuleInit {
     }
   }
 
- async deleteDelivery(deliveryId: string, user: UserRequest) {
-  const deliveryFinded = await this.deliveryRepository.findOne({
-    where: {
-      id: deliveryId,
-      isActive: true,
-    },
-    relations: { establishment: true },
-  });
+  async deleteDelivery(deliveryId: string, user: UserRequest) {
+    const deliveryFinded = await this.deliveryRepository.findOne({
+      where: {
+        id: deliveryId,
+        isActive: true,
+      },
+      relations: { establishment: true },
+    });
 
-  if (!deliveryFinded) {
-    throw new BadRequestException('Entrega não encontrada.');
-  }
+    if (!deliveryFinded) {
+      throw new BadRequestException('Entrega não encontrada.');
+    }
 
-  const userFinded = await this.userRepository.findOneBy({
-    id: user.id,
-  });
+    const userFinded = await this.userRepository.findOneBy({
+      id: user.id,
+    });
 
-  if (
-    (userFinded.type === UserType.SHOPKEEPER ||
-      userFinded.type === UserType.SHOPKEEPERADMIN) &&
-    deliveryFinded.establishment.id != userFinded.id
-  ) {
-    throw new BadRequestException('Você não é o dono dessa entrega.');
-  }
+    if (
+      (userFinded.type === UserType.SHOPKEEPER ||
+        userFinded.type === UserType.SHOPKEEPERADMIN) &&
+      deliveryFinded.establishment.id != userFinded.id
+    ) {
+      throw new BadRequestException('Você não é o dono dessa entrega.');
+    }
 
-  const ifoodLink = await this.ifoodOrderLinkService.findByDeliveryId(
-    deliveryFinded.id,
-  );
-
-  if (ifoodLink) {
-    await this.ifoodOrdersService.requestCancellation(
-      ifoodLink.ifoodOrderId,
-      'Cancelado no Rappidex pela exclusão da entrega.',
+    const ifoodLink = await this.ifoodOrderLinkService.findByDeliveryId(
+      deliveryFinded.id,
     );
+
+    if (ifoodLink) {
+      await this.ifoodOrdersService.requestCancellation(
+        ifoodLink.ifoodOrderId,
+        'Cancelado no Rappidex pela exclusão da entrega.',
+      );
+    }
+
+    try {
+      await this.deliveryRepository.save({
+        ...deliveryFinded,
+        status: StatusDelivery.CANCELED,
+        isActive: false,
+        updatedAt: addHours(new Date(), -3),
+      });
+
+      this.ordersGateway.emitDeliveryDeleted(
+        deliveryFinded.id,
+        deliveryFinded.establishment?.cityId,
+      );
+    } catch (error) {
+      return error;
+    }
+
+    return { status: 200, message: 'Entrega apagada com sucesso!' };
   }
 
-  try {
+  async cancelDeliveryFromIfood(orderId: string, event?: any) {
+    const ifoodLink = await this.ifoodOrderLinkService.findByIfoodOrderId(
+      orderId,
+    );
+
+    if (!ifoodLink) {
+      return;
+    }
+
+    const deliveryFinded = await this.deliveryRepository.findOne({
+      where: {
+        id: ifoodLink.deliveryId,
+      },
+      relations: { establishment: true },
+    });
+
+    if (!deliveryFinded || !deliveryFinded.isActive) {
+      return;
+    }
+
     await this.deliveryRepository.save({
       ...deliveryFinded,
       status: StatusDelivery.CANCELED,
@@ -658,49 +704,11 @@ export class DeliveryService implements OnModuleInit {
       deliveryFinded.id,
       deliveryFinded.establishment?.cityId,
     );
-  } catch (error) {
-    return error;
-  }
 
-  return { status: 200, message: 'Entrega apagada com sucesso!' };
-}
-
-async cancelDeliveryFromIfood(orderId: string, event?: any) {
-  const ifoodLink = await this.ifoodOrderLinkService.findByIfoodOrderId(
-    orderId,
-  );
-
-  if (!ifoodLink) {
-    return;
-  }
-
-  const deliveryFinded = await this.deliveryRepository.findOne({
-    where: {
-      id: ifoodLink.deliveryId,
-    },
-    relations: { establishment: true },
-  });
-
-  if (!deliveryFinded || !deliveryFinded.isActive) {
-    return;
-  }
-
-  await this.deliveryRepository.save({
-    ...deliveryFinded,
-    status: StatusDelivery.CANCELED,
-    isActive: false,
-    updatedAt: addHours(new Date(), -3),
-  });
-
-    this.ordersGateway.emitDeliveryDeleted(
-      deliveryFinded.id,
-      deliveryFinded.establishment?.cityId,
+    this.logger.warn(
+      `Entrega ${deliveryFinded.id} cancelada no Rappidex por evento ${event?.fullCode || event?.code || 'CANCELLED'} do iFood. OrderId: ${orderId}`,
     );
-
-  this.logger.warn(
-    `Entrega ${deliveryFinded.id} cancelada no Rappidex por evento ${event?.fullCode || event?.code || 'CANCELLED'} do iFood. OrderId: ${orderId}`,
-  );
-}
+  }
 
   async findOneUserById(userId: string) {
     const user = await this.userRepository.findOneBy({ id: userId });
@@ -735,7 +743,7 @@ async cancelDeliveryFromIfood(orderId: string, event?: any) {
     };
   }
 
-    private isPendingClaimAttempt(
+  private isPendingClaimAttempt(
     delivery: DeliveryEntity,
     deliveryData: UpdateDeliveryDto,
   ) {
@@ -747,27 +755,27 @@ async cancelDeliveryFromIfood(orderId: string, event?: any) {
   }
 
   private buildPersistableDelivery(data: Record<string, any>) {
-  return {
-    internalId: data.internalId,
-    id: data.id,
-    clientName: data.clientName,
-    clientPhone: data.clientPhone,
-    status: data.status,
-    establishment: data.establishment ?? null,
-    motoboy: data.motoboy ?? null,
-    value: data.value,
-    observation: data.observation,
-    soda: data.soda,
-    payment: data.payment,
-    isActive: data.isActive,
-    createdAt: data.createdAt ?? null,
-    createdBy: data.createdBy ?? null,
-    updatedAt: data.updatedAt ?? null,
-    onCoursedAt: data.onCoursedAt ?? null,
-    collectedAt: data.collectedAt ?? null,
-    finishedAt: data.finishedAt ?? null,
-  };
-}
+    return {
+      internalId: data.internalId,
+      id: data.id,
+      clientName: data.clientName,
+      clientPhone: data.clientPhone,
+      status: data.status,
+      establishment: data.establishment ?? null,
+      motoboy: data.motoboy ?? null,
+      value: data.value,
+      observation: data.observation,
+      soda: data.soda,
+      payment: data.payment,
+      isActive: data.isActive,
+      createdAt: data.createdAt ?? null,
+      createdBy: data.createdBy ?? null,
+      updatedAt: data.updatedAt ?? null,
+      onCoursedAt: data.onCoursedAt ?? null,
+      collectedAt: data.collectedAt ?? null,
+      finishedAt: data.finishedAt ?? null,
+    };
+  }
 
   private async claimPendingDeliveryAtomically(
     deliveryFinded: DeliveryEntity,
@@ -789,10 +797,7 @@ async cancelDeliveryFromIfood(orderId: string, event?: any) {
         id: deliveryFinded.id,
         isActive: true,
         status: StatusDelivery.PENDING,
-        $or: [
-          { motoboy: null },
-          { motoboy: { $exists: false } },
-        ],
+        $or: [{ motoboy: null }, { motoboy: { $exists: false } }],
       } as any,
       {
         $set: deliveryToPersist,
@@ -800,42 +805,39 @@ async cancelDeliveryFromIfood(orderId: string, event?: any) {
     );
 
     if (!claimResult?.modifiedCount) {
-  const currentDelivery = await this.deliveryRepository.findOne({
-    where: {
+      const currentDelivery = await this.deliveryRepository.findOne({
+        where: {
+          id: deliveryFinded.id,
+        } as any,
+        relations: {
+          motoboy: true,
+          establishment: true,
+        },
+      });
+
+      if (
+        currentDelivery?.motoboy?.id &&
+        currentDelivery.motoboy.id !== motoboyFinded.id
+      ) {
+        throw new BadRequestException(
+          'Essa entrega já foi atribuída a outro entregador.',
+        );
+      }
+
+      throw new BadRequestException(
+        'Essa entrega acabou de ser aceita por outro entregador. Atualize a lista.',
+      );
+    }
+
+    const deliveryUpdated = await this.deliveryRepository.findOneByOrFail({
       id: deliveryFinded.id,
-    } as any,
-    relations: {
-      motoboy: true,
-      establishment: true,
-    },
-  });
+    });
 
-  if (
-    currentDelivery?.motoboy?.id &&
-    currentDelivery.motoboy.id !== motoboyFinded.id
-  ) {
-    throw new BadRequestException(
-      'Essa entrega já foi atribuída a outro entregador.',
-    );
+    return deliveryUpdated;
   }
 
-  throw new BadRequestException(
-    'Essa entrega acabou de ser aceita por outro entregador. Atualize a lista.',
-  );
-}
-
-const deliveryUpdated = await this.deliveryRepository.findOneByOrFail({
-  id: deliveryFinded.id,
-});
-
-return deliveryUpdated;
-  }
-
-    private ensureCityAccess(user: UserEntity, resourceCityId: string) {
-    if (
-      user.type !== UserType.SUPERADMIN &&
-      user.cityId !== resourceCityId
-    ) {
+  private ensureCityAccess(user: UserEntity, resourceCityId: string) {
+    if (user.type !== UserType.SUPERADMIN && user.cityId !== resourceCityId) {
       throw new UnauthorizedException(
         'Você não tem permissão para acessar recursos de outra cidade.',
       );
