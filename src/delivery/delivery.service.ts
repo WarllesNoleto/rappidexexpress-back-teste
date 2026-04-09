@@ -186,6 +186,17 @@ export class DeliveryService implements OnModuleInit {
     );
   }
 
+  private sendStatusNotificationInBackground(
+    subscriptionId: string,
+    message: string,
+  ) {
+    void sendNotificationsFor([subscriptionId], message).catch((error: any) => {
+      this.logger.warn(
+        `Falha assíncrona ao enviar notificação de status da entrega. ${error?.message || error}`,
+      );
+    });
+  }
+
   async listDeliveries(
     user: UserRequest,
     queryParams: ListDeliveriesQueryDTO,
@@ -449,10 +460,10 @@ export class DeliveryService implements OnModuleInit {
       deliveryUpdated.establishment?.cityId ?? deliveryFinded.establishment?.cityId,
     );
 
-    if (
-      deliveryFinded.establishment.notification &&
-      deliveryFinded.establishment.notification.subscriptionId
-    ) {
+    const subscriptionId =
+      deliveryFinded.establishment?.notification?.subscriptionId;
+
+    if (subscriptionId) {
       if (
         deliveryData.status &&
         deliveryData.status === StatusDelivery.ONCOURSE
@@ -464,13 +475,13 @@ export class DeliveryService implements OnModuleInit {
           deliveryFinded.motoboy?.name ||
           'o motoboy';
 
-        await sendNotificationsFor(
-          [deliveryFinded.establishment.notification.subscriptionId],
+        this.sendStatusNotificationInBackground(
+          subscriptionId,
           `O motoboy ${motoboyName} aceitou a entrega do pedido do(a) ${deliveryFinded.clientName} e está a caminho!`,
         );
       } else if (deliveryData.status) {
-        await sendNotificationsFor(
-          [deliveryFinded.establishment.notification.subscriptionId],
+        this.sendStatusNotificationInBackground(
+          subscriptionId,
           `Houve uma alteração no status da entrega do pedido do(a) ${deliveryFinded.clientName}`,
         );
       }
