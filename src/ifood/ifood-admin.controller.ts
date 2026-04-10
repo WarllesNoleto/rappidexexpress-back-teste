@@ -143,7 +143,7 @@ export class IfoodAdminController {
     }
 
     const order = await this.ifoodOrdersService.getOrderDetails(orderId);
-    const targetShopkeeperId =
+    const targetShopkeeperId: string | null =
       await this.ifoodOrdersService.resolveTargetShopkeeperId(
         order?.merchant?.id,
       );

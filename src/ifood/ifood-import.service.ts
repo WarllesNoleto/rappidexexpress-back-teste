@@ -69,8 +69,8 @@ export class IfoodImportService {
         }
 
         const order = await this.ifoodOrdersService.getOrderDetails(orderId);
-        const targetShopkeeperId =
-          this.ifoodOrdersService.resolveTargetShopkeeperId(
+        const targetShopkeeperId: string | null =
+          await this.ifoodOrdersService.resolveTargetShopkeeperId(
             order?.merchant?.id,
           );
 
