@@ -58,6 +58,12 @@ export class UserEntity {
   @Column()
   token: string;
 
+ @Column({ default: false })
+  useIfoodIntegration: boolean;
+
+  @Column({ nullable: true })
+  ifoodMerchantId?: string;
+
   @Column()
   createdAt: Date;
 

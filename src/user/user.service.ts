@@ -64,6 +64,10 @@ export class UserService {
       .replace(' ', '');
 
     const city = await this.resolveCity(data.cityId, requester);
+    const useIfoodIntegration = Boolean(data.useIfoodIntegration);
+    const ifoodMerchantId = useIfoodIntegration
+      ? data.ifoodMerchantId?.trim() ?? ''
+      : '';
 
     try {
       const newUser = await this.userRepository.save({
@@ -72,6 +76,8 @@ export class UserService {
         cityId: city.id.toHexString(),
         phone,
         password: passHash,
+        useIfoodIntegration,
+        ifoodMerchantId,
         isActive: true,
         createdAt: addHours(new Date(), -3),
         updatedAt: addHours(new Date(), -3),
@@ -170,10 +176,19 @@ export class UserService {
     }
 
     try {
+      const useIfoodIntegration =
+        data.useIfoodIntegration ?? userToUpdate.useIfoodIntegration ?? false;
+
+      const ifoodMerchantId = useIfoodIntegration
+        ? (data.ifoodMerchantId ?? userToUpdate.ifoodMerchantId ?? '').trim()
+        : '';
+
       const changedUser = await this.userRepository.save({
         ...userToUpdate,
         ...data,
         cityId,
+        useIfoodIntegration,
+        ifoodMerchantId,
         updatedAt: addHours(new Date(), -3),
       });
       return UserResult.fromEntity(changedUser);

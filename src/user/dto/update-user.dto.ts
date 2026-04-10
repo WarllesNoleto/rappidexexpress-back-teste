@@ -49,4 +49,12 @@ export class UpdateUserDto {
   @IsMongoId()
   @IsOptional()
   cityId?: string;
+  
+  @IsBoolean()
+  @IsOptional()
+  useIfoodIntegration?: boolean;
+
+  @IsString()
+  @IsOptional()
+  ifoodMerchantId?: string;
 }

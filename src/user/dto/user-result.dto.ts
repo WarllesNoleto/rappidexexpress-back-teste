@@ -38,6 +38,12 @@ export class UserResult {
 
   @Expose()
   cityId: string;
+  
+  @Expose()
+  useIfoodIntegration: boolean;
+
+  @Expose()
+  ifoodMerchantId?: string;
 
   public static fromEntity(user: UserEntity) {
     return plainToClass<UserResult, UserResult>(UserResult, user, {
