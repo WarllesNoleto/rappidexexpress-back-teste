@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { DeliveryService } from '../delivery/delivery.service';
 import { IfoodOrderLinkService } from './ifood-order-link.service';
 import { IfoodOrdersService } from './ifood-orders.service';
@@ -10,7 +9,6 @@ export class IfoodImportService {
   private readonly logger = new Logger(IfoodImportService.name);
 
   constructor(
-    private readonly configService: ConfigService,
     private readonly deliveryService: DeliveryService,
     private readonly ifoodOrdersService: IfoodOrdersService,
     private readonly ifoodOrderLinkService: IfoodOrderLinkService,
@@ -42,17 +40,6 @@ export class IfoodImportService {
       ...new Set(eligibleEvents.map((event) => event?.orderId).filter(Boolean)),
     ];
 
-    const targetShopkeeperId = this.configService.get<string>(
-      'IFOOD_TARGET_SHOPKEEPER_ID',
-    );
-
-    if (!targetShopkeeperId) {
-      this.logger.error(
-        'Importação automática: IFOOD_TARGET_SHOPKEEPER_ID não configurado.',
-      );
-      return;
-    }
-
     for (const orderId of uniqueOrderIds) {
       try {
         const existingLink =
@@ -82,6 +69,18 @@ export class IfoodImportService {
         }
 
         const order = await this.ifoodOrdersService.getOrderDetails(orderId);
+         const targetShopkeeperId =
+          this.ifoodOrdersService.resolveTargetShopkeeperId(
+            order?.merchant?.id,
+          );
+
+        if (!targetShopkeeperId) {
+          this.logger.error(
+            `Importação automática: nenhum lojista configurado para o merchantId ${order?.merchant?.id ?? '(vazio)'}.`,
+          );
+          continue;
+        }
+
         const deliveryDto =
           await this.ifoodOrdersService.buildCreateDeliveryDto(orderId);
 

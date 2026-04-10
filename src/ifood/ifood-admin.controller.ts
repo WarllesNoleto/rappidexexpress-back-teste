@@ -142,17 +142,16 @@ export class IfoodAdminController {
       throw new BadRequestException(readiness.reason);
     }
 
-    const targetShopkeeperId = this.configService.get<string>(
-      'IFOOD_TARGET_SHOPKEEPER_ID',
-    );
+    const order = await this.ifoodOrdersService.getOrderDetails(orderId);
+    const targetShopkeeperId =
+      this.ifoodOrdersService.resolveTargetShopkeeperId(order?.merchant?.id);
 
     if (!targetShopkeeperId) {
       throw new BadRequestException(
-        'IFOOD_TARGET_SHOPKEEPER_ID não configurado no .env.',
+        `Nenhum lojista configurado para o merchantId ${order?.merchant?.id ?? '(vazio)'} no .env.`,
       );
     }
 
-    const order = await this.ifoodOrdersService.getOrderDetails(orderId);
     const deliveryDto =
       await this.ifoodOrdersService.buildCreateDeliveryDto(orderId);
 

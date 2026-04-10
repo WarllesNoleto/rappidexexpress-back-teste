@@ -445,8 +445,8 @@ private pickCancellationReason(reasons: any[], preferredCode?: string) {
 
   async buildCreateDeliveryDto(orderId: string): Promise<CreateDeliveryDto> {
     const order = await this.getOrderDetails(orderId);
-    const establishmentId = this.configService.get<string>(
-      'IFOOD_TARGET_SHOPKEEPER_ID',
+     const establishmentId = this.resolveTargetShopkeeperId(
+      order?.merchant?.id,
     );
 
     const customerName = order?.customer?.name ?? 'Cliente iFood';
@@ -495,6 +495,59 @@ private pickCancellationReason(reasons: any[], preferredCode?: string) {
       soda: 'NÃO',
       observation,
     };
+  }
+  
+  resolveTargetShopkeeperId(merchantId?: string | null): string | null {
+    const normalizedMerchantId = String(merchantId || '').trim();
+    const merchantMap = this.getMerchantShopkeeperMap();
+
+    if (normalizedMerchantId && merchantMap[normalizedMerchantId]) {
+      return merchantMap[normalizedMerchantId];
+    }
+
+    return (
+      this.configService.get<string>('IFOOD_TARGET_SHOPKEEPER_ID') ?? null
+    );
+  }
+
+  private getMerchantShopkeeperMap(): Record<string, string> {
+    const rawMap = this.configService.get<string>(
+      'IFOOD_MERCHANT_SHOPKEEPER_MAP',
+    );
+
+    if (!rawMap) {
+      return {};
+    }
+
+    try {
+      const parsed = JSON.parse(rawMap);
+
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        this.logger.warn(
+          'IFOOD_MERCHANT_SHOPKEEPER_MAP inválido: use um objeto JSON no formato {"merchantId":"shopkeeperId"}.',
+        );
+        return {};
+      }
+
+      return Object.entries(parsed).reduce(
+        (acc, [merchantId, shopkeeperId]) => {
+          const normalizedMerchantId = String(merchantId || '').trim();
+          const normalizedShopkeeperId = String(shopkeeperId || '').trim();
+
+          if (normalizedMerchantId && normalizedShopkeeperId) {
+            acc[normalizedMerchantId] = normalizedShopkeeperId;
+          }
+
+          return acc;
+        },
+        {} as Record<string, string>,
+      );
+    } catch (error) {
+      this.logger.warn(
+        'IFOOD_MERCHANT_SHOPKEEPER_MAP inválido: não foi possível fazer parse do JSON.',
+      );
+      return {};
+    }
   }
 
     private async postLogisticsWithoutBody(
