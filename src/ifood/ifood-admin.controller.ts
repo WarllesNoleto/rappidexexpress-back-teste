@@ -144,11 +144,13 @@ export class IfoodAdminController {
 
     const order = await this.ifoodOrdersService.getOrderDetails(orderId);
     const targetShopkeeperId =
-      this.ifoodOrdersService.resolveTargetShopkeeperId(order?.merchant?.id);
+      await this.ifoodOrdersService.resolveTargetShopkeeperId(
+        order?.merchant?.id,
+      );
 
     if (!targetShopkeeperId) {
       throw new BadRequestException(
-        `Nenhum lojista configurado para o merchantId ${order?.merchant?.id ?? '(vazio)'} no .env.`,
+        `Nenhum lojista configurado para o merchantId ${order?.merchant?.id ?? '(vazio)'}.`,
       );
     }
 

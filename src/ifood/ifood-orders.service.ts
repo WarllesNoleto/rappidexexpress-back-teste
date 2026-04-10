@@ -5,6 +5,8 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { MongoRepository } from 'typeorm';
 import axios from 'axios';
 import { CreateDeliveryDto } from '../delivery/dto';
 import { UserEntity } from '../database/entities';
@@ -21,6 +23,8 @@ export class IfoodOrdersService {
   constructor(
     private readonly ifoodAuthService: IfoodAuthService,
     private readonly configService: ConfigService,
+    @InjectRepository(UserEntity)
+    private readonly userRepository: MongoRepository<UserEntity>,
   ) {}
 
   async getOrderDetails(orderId: string) {
@@ -445,7 +449,7 @@ private pickCancellationReason(reasons: any[], preferredCode?: string) {
 
   async buildCreateDeliveryDto(orderId: string): Promise<CreateDeliveryDto> {
     const order = await this.getOrderDetails(orderId);
-     const establishmentId = this.resolveTargetShopkeeperId(
+    const establishmentId = await this.resolveTargetShopkeeperId(
       order?.merchant?.id,
     );
 
@@ -497,12 +501,31 @@ private pickCancellationReason(reasons: any[], preferredCode?: string) {
     };
   }
   
-  resolveTargetShopkeeperId(merchantId?: string | null): string | null {
+  async resolveTargetShopkeeperId(
+    merchantId?: string | null,
+  ): Promise<string | null> {
     const normalizedMerchantId = String(merchantId || '').trim();
     const merchantMap = this.getMerchantShopkeeperMap();
 
     if (normalizedMerchantId && merchantMap[normalizedMerchantId]) {
       return merchantMap[normalizedMerchantId];
+    }
+    
+    if (normalizedMerchantId) {
+      const mappedUser = await this.userRepository.findOne({
+        where: {
+          useIfoodIntegration: true,
+          ifoodMerchantId: normalizedMerchantId,
+          isActive: true,
+        } as any,
+        order: {
+          updatedAt: 'DESC',
+        },
+      });
+
+      if (mappedUser?.id) {
+        return mappedUser.id;
+      }
     }
 
     return (
