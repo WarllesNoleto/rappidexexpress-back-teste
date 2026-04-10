@@ -4,7 +4,10 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { MongoRepository } from 'typeorm';
 import axios from 'axios';
+import { UserEntity } from '../database/entities';
 import { IfoodAuthService } from './ifood-auth.service';
 
 @Injectable()
@@ -14,11 +17,13 @@ export class IfoodPollingService {
   constructor(
     private readonly ifoodAuthService: IfoodAuthService,
     private readonly configService: ConfigService,
+    @InjectRepository(UserEntity)
+    private readonly userRepository: MongoRepository<UserEntity>,
   ) {}
 
   async pollEvents() {
     const accessToken = await this.ifoodAuthService.getAccessToken();
-    const merchantIds = this.resolvePollingMerchants();
+    const merchantIds = await this.resolvePollingMerchants();
 
     if (!merchantIds) {
       throw new InternalServerErrorException(
@@ -94,7 +99,7 @@ export class IfoodPollingService {
     }
   }
 
-  private resolvePollingMerchants(): string {
+   private async resolvePollingMerchants(): Promise<string> {
     const rawPollingMerchants = this.configService.get<string>(
       'IFOOD_POLLING_MERCHANTS',
     );
@@ -102,11 +107,21 @@ export class IfoodPollingService {
       'IFOOD_TEST_MERCHANT_ID',
     );
     const rawMerchant = this.configService.get<string>('IFOOD_MERCHANT_ID');
+    const usersWithIfoodIntegration = await this.userRepository.find({
+      where: {
+        useIfoodIntegration: true,
+        isActive: true,
+      } as any,
+    });
 
+    const merchantIdsFromUsers = usersWithIfoodIntegration
+      .map((user) => String(user.ifoodMerchantId || '').trim())
+      .filter(Boolean); 
     const merchants = [
       rawPollingMerchants,
       rawTestMerchant,
       rawMerchant,
+      ...merchantIdsFromUsers,
     ]
       .filter(Boolean)
       .flatMap((item) => String(item).split(','))
