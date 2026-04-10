@@ -219,7 +219,7 @@ export class DeliveryService implements OnModuleInit {
 
     const notifyPromise =
       deliveryStatus !== StatusDelivery.ONCOURSE
-        ? this.sendNotificationsToMotoboys(
+        ? this.sendNotificationsToRelevantUsers(
             newDelivery.establishment.name,
             newDelivery.establishment.cityId,
           )
@@ -850,16 +850,16 @@ export class DeliveryService implements OnModuleInit {
     }
   }
 
-  private async sendNotificationsToMotoboys(
+  private async sendNotificationsToRelevantUsers(
     establishmentName: string,
     cityId: string,
   ) {
-    console.log('=== INÍCIO NOTIFICAÇÃO DE NOVO PEDIDO ===');
+    console.log('=== INÍCIO NOTIFICAÇÃO DE NOVO PEDIDO (MOTOBOYS/ADMINS) ===');
     console.log('Estabelecimento:', establishmentName);
     console.log('Cidade do pedido:', cityId);
 
     const where: Record<string, unknown> = {
-      type: UserType.MOTOBOY,
+      type: { $in: [UserType.MOTOBOY, UserType.ADMIN, UserType.SUPERADMIN] },
       isActive: true,
     };
 
@@ -867,38 +867,42 @@ export class DeliveryService implements OnModuleInit {
       where['cityId'] = cityId;
     }
 
-    console.log('Filtro usado para buscar motoboys:', where);
+    console.log('Filtro usado para buscar usuários notificados:', where);
 
-    const motoboys = await this.userRepository.find({ where });
+    const usersToNotify = await this.userRepository.find({ where });
 
-    console.log('Motoboys encontrados:', motoboys.length);
+    console.log('Usuários encontrados para notificação:', usersToNotify.length);
 
-    const motoboysNotificationsIds = motoboys
-      .map((motoboy: UserEntity) => {
-        console.log('Motoboy:', {
-          id: motoboy.id,
-          name: motoboy.name,
-          cityId: motoboy.cityId,
-          isActive: motoboy.isActive,
-          subscriptionId: motoboy.notification?.subscriptionId ?? null,
+    const usersNotificationsIds = usersToNotify
+      .map((userToNotify: UserEntity) => {
+        console.log('Usuário candidato à notificação:', {
+          id: userToNotify.id,
+          name: userToNotify.name,
+          cityId: userToNotify.cityId,
+          type: userToNotify.type,
+          isActive: userToNotify.isActive,
+          subscriptionId: userToNotify.notification?.subscriptionId ?? null,
         });
 
-        if (motoboy.notification && motoboy.notification.subscriptionId) {
-          return motoboy.notification.subscriptionId;
+        if (
+          userToNotify.notification &&
+          userToNotify.notification.subscriptionId
+        ) {
+          return userToNotify.notification.subscriptionId;
         }
 
         return null;
       })
       .filter((i) => !!i);
 
-    console.log('Subscription IDs encontrados:', motoboysNotificationsIds);
+    console.log('Subscription IDs encontrados:', usersNotificationsIds);
 
     await sendNotificationsFor(
-      motoboysNotificationsIds,
+      usersNotificationsIds,
       `Nova solicitação de entrega no estabelecimento: ${establishmentName}`,
     );
 
-    console.log('=== FIM NOTIFICAÇÃO DE NOVO PEDIDO ===');
+    console.log('=== FIM NOTIFICAÇÃO DE NOVO PEDIDO (MOTOBOYS/ADMINS) ===');
   }
 
   private buildDeliveriesWhere(
