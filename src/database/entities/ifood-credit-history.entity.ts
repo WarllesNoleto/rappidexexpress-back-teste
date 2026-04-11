@@ -1,7 +1,7 @@
 import { ObjectId } from 'mongodb';
 import { Column, Entity, ObjectIdColumn } from 'typeorm';
 
-export type IfoodCreditOperationType = 'ADD' | 'REMOVE' | 'CONSUME';
+export type IfoodCreditOperationType = 'ADD' | 'REMOVE' | 'CONSUME' | 'REFUND';
 
 @Entity()
 export class IfoodCreditHistoryEntity {

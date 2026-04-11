@@ -193,6 +193,23 @@ export class DeliveryService implements OnModuleInit {
     });
   }
 
+  private async refundCreditForCanceledDelivery(
+    delivery: DeliveryEntity,
+    reason: string,
+    ifoodOrderId?: string,
+  ) {
+    const establishmentId = delivery?.establishment?.id;
+    if (!establishmentId) {
+      return;
+    }
+
+    await this.ifoodCreditsService.refundCreditForOrder(
+      establishmentId,
+      ifoodOrderId || delivery.id,
+      reason,
+    );
+  }
+
   private sendStatusNotificationInBackground(
     subscriptionId: string,
     message: string,
@@ -507,6 +524,21 @@ export class DeliveryService implements OnModuleInit {
         deliveryFinded.establishment?.cityId,
     );
 
+    if (
+      deliveryData.status === StatusDelivery.CANCELED &&
+      deliveryFinded.status !== StatusDelivery.CANCELED
+    ) {
+      const ifoodLink = await this.ifoodOrderLinkService.findByDeliveryId(
+        deliveryFinded.id,
+      );
+
+      await this.refundCreditForCanceledDelivery(
+        deliveryFinded,
+        'Crédito estornado por cancelamento da entrega.',
+        ifoodLink?.ifoodOrderId,
+      );
+    }
+
     const subscriptionId =
       deliveryFinded.establishment?.notification?.subscriptionId;
 
@@ -682,6 +714,12 @@ export class DeliveryService implements OnModuleInit {
         updatedAt: addHours(new Date(), -3),
       });
 
+      await this.refundCreditForCanceledDelivery(
+        deliveryFinded,
+        'Crédito estornado por exclusão da entrega.',
+        ifoodLink?.ifoodOrderId,
+      );
+
       this.ordersGateway.emitDeliveryDeleted(
         deliveryFinded.id,
         deliveryFinded.establishment?.cityId,
@@ -718,6 +756,12 @@ export class DeliveryService implements OnModuleInit {
       isActive: false,
       updatedAt: addHours(new Date(), -3),
     });
+
+    await this.refundCreditForCanceledDelivery(
+      deliveryFinded,
+      'Crédito estornado por cancelamento recebido do iFood.',
+      orderId,
+    );
 
     this.ordersGateway.emitDeliveryDeleted(
       deliveryFinded.id,

@@ -65,7 +65,7 @@ export class IfoodCreditsService {
 
   private async registerHistory(data: {
     companyId: string;
-    operationType: 'ADD' | 'REMOVE' | 'CONSUME';
+    operationType: 'ADD' | 'REMOVE' | 'CONSUME' | 'REFUND';
     amount: number;
     releasedAfterOperation: number;
     usedAfterOperation: number;
@@ -197,6 +197,64 @@ export class IfoodCreditsService {
       usedAfterOperation: updated.value.ifoodOrdersUsed || 0,
       availableAfterOperation: updated.value.ifoodOrdersAvailable || 0,
       orderId,
+    });
+
+    return updated.value;
+  }
+
+  async refundCreditForOrder(companyId: string, orderId: string, reason?: string) {
+    const alreadyRefunded = await this.creditHistoryRepository.findOne({
+      where: {
+        companyId,
+        orderId,
+        operationType: 'REFUND',
+      },
+    });
+
+    if (alreadyRefunded) {
+      return this.userRepository.findOneBy({ id: companyId });
+    }
+
+    const consumedForOrder = await this.creditHistoryRepository.findOne({
+      where: {
+        companyId,
+        orderId,
+        operationType: 'CONSUME',
+      },
+    });
+
+    if (!consumedForOrder) {
+      return this.userRepository.findOneBy({ id: companyId });
+    }
+
+    const updated = await this.userRepository.findOneAndUpdate(
+      {
+        id: companyId,
+        ifoodOrdersUsed: { $gte: 1 },
+      },
+      {
+        $inc: {
+          ifoodOrdersAvailable: 1,
+          ifoodOrdersUsed: -1,
+        },
+        $set: { updatedAt: addHours(new Date(), -3) },
+      },
+      { returnDocument: 'after' },
+    );
+
+    if (!updated.value) {
+      throw new BadRequestException('Não foi possível estornar o crédito.');
+    }
+
+    await this.registerHistory({
+      companyId,
+      operationType: 'REFUND',
+      amount: 1,
+      releasedAfterOperation: updated.value.ifoodOrdersReleased || 0,
+      usedAfterOperation: updated.value.ifoodOrdersUsed || 0,
+      availableAfterOperation: updated.value.ifoodOrdersAvailable || 0,
+      orderId,
+      reason,
     });
 
     return updated.value;
