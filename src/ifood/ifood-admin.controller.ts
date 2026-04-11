@@ -261,7 +261,9 @@ export class IfoodAdminController {
       body.reason,
     );
     
-    await this.ifoodImportService.retryPendingImportsForCompany(companyId);
+    if (summary.useIfoodIntegration) {
+      await this.ifoodImportService.retryPendingImportsForCompany(companyId);
+    }
 
     return summary;
   }
