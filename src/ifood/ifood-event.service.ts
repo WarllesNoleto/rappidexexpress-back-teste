@@ -22,6 +22,54 @@ export class IfoodEventService {
     return Array.isArray(events) ? events : [];
   }
 
+  async findRecentOrderIds(lookbackMinutes = 120, limit = 1000) {
+    const cutoff = new Date(Date.now() - lookbackMinutes * 60 * 1000);
+
+    const recentEvents = await this.ifoodEventRepository.find({
+      where: {
+        processedAt: { $gte: cutoff },
+      } as any,
+      order: { processedAt: 'DESC' },
+      take: limit,
+    });
+
+    return [
+      ...new Set(
+        (Array.isArray(recentEvents) ? recentEvents : [])
+          .map((event) => event?.orderId)
+          .filter(Boolean),
+      ),
+    ];
+  }
+
+  async findLatestProcessedAtByOrderIds(orderIds: string[]) {
+    if (!Array.isArray(orderIds) || orderIds.length === 0) {
+      return new Map<string, Date>();
+    }
+
+    const events = await this.ifoodEventRepository.find({
+      where: {
+        orderId: { $in: orderIds },
+      } as any,
+      order: { processedAt: 'DESC' },
+      take: orderIds.length * 20,
+    });
+
+    const latestByOrder = new Map<string, Date>();
+
+    for (const event of Array.isArray(events) ? events : []) {
+      if (!event?.orderId || !event?.processedAt) {
+        continue;
+      }
+
+      if (!latestByOrder.has(event.orderId)) {
+        latestByOrder.set(event.orderId, new Date(event.processedAt));
+      }
+    }
+
+    return latestByOrder;
+  }
+
  async findRecentEligibleImportEvents(limit = 500) {
     const events = await this.ifoodEventRepository.find({
       where: {
@@ -48,17 +96,25 @@ export class IfoodEventService {
     salesChannel?: string;
     createdAt?: string;
   }) {
-    return this.ifoodEventRepository.save({
-      eventId: event.id,
-      orderId: event.orderId ?? '',
-      merchantId: event.merchantId ?? '',
-      code: event.code ?? '',
-      fullCode: event.fullCode ?? '',
-      salesChannel: event.salesChannel ?? '',
-      createdAt: event.createdAt ?? '',
-      processedAt: new Date(),
-      acknowledged: false,
-    });
+    await this.ifoodEventRepository.updateOne(
+      { eventId: event.id },
+      {
+        $setOnInsert: {
+          eventId: event.id,
+          orderId: event.orderId ?? '',
+          merchantId: event.merchantId ?? '',
+          code: event.code ?? '',
+          fullCode: event.fullCode ?? '',
+          salesChannel: event.salesChannel ?? '',
+          createdAt: event.createdAt ?? '',
+          processedAt: new Date(),
+          acknowledged: false,
+        },
+      } as any,
+      { upsert: true },
+    );
+
+    return this.findByEventId(event.id);
   }
 
   async markAsAcknowledged(eventId: string) {
