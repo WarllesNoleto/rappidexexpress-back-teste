@@ -209,6 +209,12 @@ export class IfoodAdminController {
     return this.ifoodCreditsService.getMySummary(user);
   }
 
+  @Get('credits/my-history')
+  @UseGuards(JwtAuthGuard)
+  async myCreditsHistory(@User() user: UserRequest) {
+    return this.ifoodCreditsService.getMyHistory(user);
+  }
+
   @Get('credits/companies')
   @UseGuards(JwtAuthGuard)
   async listCompaniesSummary(@User() user: UserRequest) {

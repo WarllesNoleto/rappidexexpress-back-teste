@@ -276,6 +276,17 @@ export class IfoodCreditsService {
     return this.buildSummary(company);
   }
 
+  async getMyHistory(requestUser: UserRequest) {
+    if (
+      requestUser.type !== UserType.SHOPKEEPER &&
+      requestUser.type !== UserType.SHOPKEEPERADMIN
+    ) {
+      throw new ForbiddenException('Apenas empresas possuem esse histórico.');
+    }
+
+    return this.getCompanyHistory(requestUser.id, requestUser);
+  }
+
   async getCreditSummaryForIntegratedCompanies(requestUser: UserRequest) {
     this.ensureCanManageCredits(requestUser);
 
