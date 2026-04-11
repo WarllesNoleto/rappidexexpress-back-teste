@@ -750,9 +750,10 @@ export class DeliveryService implements OnModuleInit {
       return;
     }
 
-    const deliveryUpdated = await this.deliveryRepository.save({
+    await this.deliveryRepository.save({
       ...deliveryFinded,
       status: StatusDelivery.CANCELED,
+      isActive: false,
       updatedAt: addHours(new Date(), -3),
     });
 
@@ -762,9 +763,9 @@ export class DeliveryService implements OnModuleInit {
       orderId,
     );
 
-    this.ordersGateway.emitDeliveryUpdated(
-      DeliveryResult.fromEntity(deliveryUpdated),
-      deliveryUpdated.establishment?.cityId,
+    this.ordersGateway.emitDeliveryDeleted(
+      deliveryFinded.id,
+      deliveryFinded.establishment?.cityId,
     );
 
     this.logger.warn(
