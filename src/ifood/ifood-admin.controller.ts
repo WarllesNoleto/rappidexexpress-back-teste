@@ -21,6 +21,7 @@ import { IfoodAuthService } from './ifood-auth.service';
 import { IfoodOrderLinkService } from './ifood-order-link.service';
 import { IfoodOrdersService } from './ifood-orders.service';
 import { IfoodPollingService } from './ifood-polling.service';
+import { IfoodImportService } from './ifood-import.service';
 import { IfoodReadinessService } from './ifood-readiness.service';
 
 @Controller('ifood')
@@ -31,6 +32,7 @@ export class IfoodAdminController {
     private readonly ifoodAuthService: IfoodAuthService,
     private readonly ifoodOrdersService: IfoodOrdersService,
     private readonly ifoodPollingService: IfoodPollingService,
+    private readonly ifoodImportService: IfoodImportService,
     private readonly ifoodOrderLinkService: IfoodOrderLinkService,
     private readonly ifoodReadinessService: IfoodReadinessService,
     private readonly ifoodCreditsService: IfoodCreditsService,
@@ -250,12 +252,16 @@ export class IfoodAdminController {
       );
     }
 
-    return this.ifoodCreditsService.addCredits(
+    const summary = await this.ifoodCreditsService.addCredits(
       companyId,
       Number(body.amount),
       user,
       body.reason,
     );
+    
+    await this.ifoodImportService.retryPendingImportsForCompany(companyId);
+
+    return summary;
   }
 
   @Post('credits/company/:companyId/remove')

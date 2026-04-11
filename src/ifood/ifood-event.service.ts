@@ -22,6 +22,21 @@ export class IfoodEventService {
     return Array.isArray(events) ? events : [];
   }
 
+ async findRecentEligibleImportEvents(limit = 500) {
+    const events = await this.ifoodEventRepository.find({
+      where: [
+        { code: 'RTP' } as any,
+        { fullCode: 'READY_TO_PICKUP' } as any,
+        { code: 'DSP' } as any,
+        { fullCode: 'DISPATCHED' } as any,
+      ],
+      order: { processedAt: 'DESC' },
+      take: limit,
+    });
+
+    return Array.isArray(events) ? events : [];
+  }
+
   async markAsProcessed(event: {
     id: string;
     orderId?: string;

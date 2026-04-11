@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DeliveryService } from '../delivery/delivery.service';
 import { IfoodCreditsService } from './ifood-credits.service';
+import { IfoodEventService } from './ifood-event.service';
 import { IfoodOrderLinkService } from './ifood-order-link.service';
 import { IfoodOrdersService } from './ifood-orders.service';
 import { IfoodReadinessService } from './ifood-readiness.service';
@@ -15,6 +16,7 @@ export class IfoodImportService {
     private readonly ifoodOrderLinkService: IfoodOrderLinkService,
     private readonly ifoodReadinessService: IfoodReadinessService,
     private readonly ifoodCreditsService: IfoodCreditsService,
+    private readonly ifoodEventService: IfoodEventService,
   ) {}
 
   async importFromEvents(events: any[]) {
@@ -120,5 +122,56 @@ export class IfoodImportService {
         );
       }
     }
+  }
+async retryPendingImportsForCompany(companyId: string, limit = 500) {
+    const recentEvents =
+      await this.ifoodEventService.findRecentEligibleImportEvents(limit);
+
+    if (recentEvents.length === 0) {
+      this.logger.log(
+        `Reprocessamento pós-crédito: nenhum evento elegível encontrado para a empresa ${companyId}.`,
+      );
+      return;
+    }
+
+    const filteredEvents: any[] = [];
+
+    for (const event of recentEvents) {
+      if (!event?.merchantId || !event?.orderId) {
+        continue;
+      }
+
+      const targetShopkeeperId =
+        await this.ifoodOrdersService.resolveTargetShopkeeperId(
+          event.merchantId,
+        );
+
+      if (targetShopkeeperId !== companyId) {
+        continue;
+      }
+
+      filteredEvents.push({
+        id: event.eventId,
+        orderId: event.orderId,
+        merchantId: event.merchantId,
+        code: event.code,
+        fullCode: event.fullCode,
+        salesChannel: event.salesChannel,
+        createdAt: event.createdAt,
+      });
+    }
+
+    if (filteredEvents.length === 0) {
+      this.logger.log(
+        `Reprocessamento pós-crédito: sem eventos pendentes para a empresa ${companyId}.`,
+      );
+      return;
+    }
+
+    this.logger.log(
+      `Reprocessamento pós-crédito: ${filteredEvents.length} evento(s) serão reavaliados para a empresa ${companyId}.`,
+    );
+
+    await this.importFromEvents(filteredEvents);
   }
 }
