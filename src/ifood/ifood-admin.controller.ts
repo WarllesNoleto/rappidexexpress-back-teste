@@ -1,12 +1,22 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   ForbiddenException,
   Get,
   Param,
+  Post,
+  UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { JwtAuthGuard } from '../authenticator/guards/jwt-auth.guard';
 import { DeliveryService } from '../delivery/delivery.service';
+import { User } from '../shared/decorators';
+import { onlyForAdmin } from '../shared/utils/permissions.function';
+import { UserRequest } from '../shared/interfaces';
+import { IfoodCreditAdjustDto } from './dto/ifood-credit-adjust.dto';
+import { IfoodCreditsService } from './ifood-credits.service';
 import { IfoodAuthService } from './ifood-auth.service';
 import { IfoodOrderLinkService } from './ifood-order-link.service';
 import { IfoodOrdersService } from './ifood-orders.service';
@@ -23,6 +33,7 @@ export class IfoodAdminController {
     private readonly ifoodPollingService: IfoodPollingService,
     private readonly ifoodOrderLinkService: IfoodOrderLinkService,
     private readonly ifoodReadinessService: IfoodReadinessService,
+    private readonly ifoodCreditsService: IfoodCreditsService,
   ) {}
 
   private ensureDebugRoutesEnabled() {
@@ -154,11 +165,16 @@ export class IfoodAdminController {
       );
     }
 
-    const deliveryDto =
-      await this.ifoodOrdersService.buildCreateDeliveryDto(orderId);
+      const deliveryDto =
+        await this.ifoodOrdersService.buildCreateDeliveryDto(orderId);
 
-    const createdDelivery = await this.deliveryService.createDelivery(
-      deliveryDto,
+      await this.ifoodCreditsService.consumeCreditForOrder(
+          targetShopkeeperId,
+          orderId,
+        );
+
+      const createdDelivery = await this.deliveryService.createDelivery(
+        deliveryDto,
       {
         id: targetShopkeeperId,
         phone: '',
@@ -183,5 +199,83 @@ export class IfoodAdminController {
       orderId,
       delivery: createdDelivery,
     };
+  }
+
+  @Get('credits/my-summary')
+  @UseGuards(JwtAuthGuard)
+  async myCreditsSummary(@User() user: UserRequest) {
+    return this.ifoodCreditsService.getMySummary(user);
+  }
+
+  @Get('credits/companies')
+  @UseGuards(JwtAuthGuard)
+  async listCompaniesSummary(@User() user: UserRequest) {
+    if (!onlyForAdmin(user.type)) {
+      throw new UnauthorizedException(
+        'Você não tem permissão para esse recurso.',
+      );
+    }
+
+    return this.ifoodCreditsService.getCreditSummaryForIntegratedCompanies(user);
+  }
+
+  @Get('credits/company/:companyId')
+  @UseGuards(JwtAuthGuard)
+  async companyCreditsSummary(
+    @Param('companyId') companyId: string,
+    @User() user: UserRequest,
+  ) {
+    return this.ifoodCreditsService.getCompanySummary(companyId, user);
+  }
+
+  @Get('credits/company/:companyId/history')
+  @UseGuards(JwtAuthGuard)
+  async companyCreditsHistory(
+    @Param('companyId') companyId: string,
+    @User() user: UserRequest,
+  ) {
+    return this.ifoodCreditsService.getCompanyHistory(companyId, user);
+  }
+
+  @Post('credits/company/:companyId/add')
+  @UseGuards(JwtAuthGuard)
+  async addCompanyCredits(
+    @Param('companyId') companyId: string,
+    @Body() body: IfoodCreditAdjustDto,
+    @User() user: UserRequest,
+  ) {
+    if (!onlyForAdmin(user.type)) {
+      throw new UnauthorizedException(
+        'Você não tem permissão para esse recurso.',
+      );
+    }
+
+    return this.ifoodCreditsService.addCredits(
+      companyId,
+      Number(body.amount),
+      user,
+      body.reason,
+    );
+  }
+
+  @Post('credits/company/:companyId/remove')
+  @UseGuards(JwtAuthGuard)
+  async removeCompanyCredits(
+    @Param('companyId') companyId: string,
+    @Body() body: IfoodCreditAdjustDto,
+    @User() user: UserRequest,
+  ) {
+    if (!onlyForAdmin(user.type)) {
+      throw new UnauthorizedException(
+        'Você não tem permissão para esse recurso.',
+      );
+    }
+
+    return this.ifoodCreditsService.removeCredits(
+      companyId,
+      Number(body.amount),
+      user,
+      body.reason,
+    );
   }
 }

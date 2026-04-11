@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
+  IfoodCreditHistoryEntity,
   IfoodEventEntity,
   IfoodOrderLinkEntity,
   UserEntity,
@@ -12,6 +13,7 @@ import { IfoodAuthService } from './ifood-auth.service';
 import { IfoodAutoPollingService } from './ifood-auto-polling.service';
 import { IfoodEventService } from './ifood-event.service';
 import { IfoodImportService } from './ifood-import.service';
+import { IfoodCreditsService } from './ifood-credits.service';
 import { IfoodOrderLinkService } from './ifood-order-link.service';
 import { IfoodOrdersService } from './ifood-orders.service';
 import { IfoodPollingService } from './ifood-polling.service';
@@ -24,6 +26,7 @@ import { IfoodReadinessService } from './ifood-readiness.service';
     TypeOrmModule.forFeature([
       IfoodOrderLinkEntity,
       IfoodEventEntity,
+      IfoodCreditHistoryEntity,
       UserEntity,
     ]),
   ],
@@ -37,6 +40,7 @@ import { IfoodReadinessService } from './ifood-readiness.service';
     IfoodAutoPollingService,
     IfoodReadinessService,
     IfoodEventService,
+    IfoodCreditsService,
   ],
   exports: [
     IfoodAuthService,
@@ -46,6 +50,7 @@ import { IfoodReadinessService } from './ifood-readiness.service';
     IfoodImportService,
     IfoodReadinessService,
     IfoodEventService,
+    IfoodCreditsService,
   ],
 })
 export class IfoodModule {}

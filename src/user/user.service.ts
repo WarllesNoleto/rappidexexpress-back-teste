@@ -78,6 +78,9 @@ export class UserService {
         password: passHash,
         useIfoodIntegration,
         ifoodMerchantId,
+        ifoodOrdersReleased: Number(data.ifoodOrdersReleased || 0),
+        ifoodOrdersUsed: Number(data.ifoodOrdersUsed || 0),
+        ifoodOrdersAvailable: Number(data.ifoodOrdersAvailable || 0),
         isActive: true,
         createdAt: addHours(new Date(), -3),
         updatedAt: addHours(new Date(), -3),
@@ -189,6 +192,11 @@ export class UserService {
         cityId,
         useIfoodIntegration,
         ifoodMerchantId,
+        ifoodOrdersReleased:
+          data.ifoodOrdersReleased ?? userToUpdate.ifoodOrdersReleased ?? 0,
+        ifoodOrdersUsed: data.ifoodOrdersUsed ?? userToUpdate.ifoodOrdersUsed ?? 0,
+        ifoodOrdersAvailable:
+          data.ifoodOrdersAvailable ?? userToUpdate.ifoodOrdersAvailable ?? 0,
         updatedAt: addHours(new Date(), -3),
       });
       return UserResult.fromEntity(changedUser);

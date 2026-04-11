@@ -45,6 +45,15 @@ export class UserResult {
   @Expose()
   ifoodMerchantId?: string;
 
+ @Expose()
+  ifoodOrdersReleased: number;
+
+  @Expose()
+  ifoodOrdersUsed: number;
+
+  @Expose()
+  ifoodOrdersAvailable: number;
+
   public static fromEntity(user: UserEntity) {
     return plainToClass<UserResult, UserResult>(UserResult, user, {
       excludeExtraneousValues: true,

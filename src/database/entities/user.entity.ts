@@ -64,6 +64,15 @@ export class UserEntity {
   @Column({ nullable: true })
   ifoodMerchantId?: string;
 
+   @Column({ default: 0 })
+  ifoodOrdersReleased: number;
+
+  @Column({ default: 0 })
+  ifoodOrdersUsed: number;
+
+  @Column({ default: 0 })
+  ifoodOrdersAvailable: number;
+
   @Column()
   createdAt: Date;
 
