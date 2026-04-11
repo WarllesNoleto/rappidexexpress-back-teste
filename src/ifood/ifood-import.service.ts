@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DeliveryService } from '../delivery/delivery.service';
-import { IfoodCreditsService } from './ifood-credits.service';
 import { IfoodEventService } from './ifood-event.service';
 import { IfoodOrderLinkService } from './ifood-order-link.service';
 import { IfoodOrdersService } from './ifood-orders.service';
@@ -15,7 +14,6 @@ export class IfoodImportService {
     private readonly ifoodOrdersService: IfoodOrdersService,
     private readonly ifoodOrderLinkService: IfoodOrderLinkService,
     private readonly ifoodReadinessService: IfoodReadinessService,
-    private readonly ifoodCreditsService: IfoodCreditsService,
     private readonly ifoodEventService: IfoodEventService,
   ) {}
 
@@ -88,11 +86,6 @@ export class IfoodImportService {
         const deliveryDto =
           await this.ifoodOrdersService.buildCreateDeliveryDto(orderId);
 
-        await this.ifoodCreditsService.consumeCreditForOrder(
-          targetShopkeeperId,
-          orderId,
-        );
-
         const createdDelivery = await this.deliveryService.createDelivery(
           deliveryDto,
           {
@@ -103,6 +96,7 @@ export class IfoodImportService {
             permission: 'admin' as any,
             cityId: '',
           },
+          { creditOrderId: orderId },          
         );
 
         await this.ifoodOrderLinkService.createLink({

@@ -26,6 +26,7 @@ import { UserRequest } from '../shared/interfaces';
 import { StatusDelivery, UserType } from '../shared/constants/enums.constants';
 import { IfoodOrderLinkService } from '../ifood/ifood-order-link.service';
 import { IfoodOrdersService } from '../ifood/ifood-orders.service';
+import { IfoodCreditsService } from '../ifood/ifood-credits.service';
 import { sendNotificationsFor } from 'src/shared/utils/notification.functions';
 import { OrdersGateway } from '../gateway/orders.gateway';
 
@@ -46,6 +47,8 @@ export class DeliveryService implements OnModuleInit {
     private readonly ifoodOrdersService: IfoodOrdersService,
     @Inject(forwardRef(() => IfoodOrderLinkService))
     private readonly ifoodOrderLinkService: IfoodOrderLinkService,
+    @Inject(forwardRef(() => IfoodCreditsService))
+    private readonly ifoodCreditsService: IfoodCreditsService,
   ) {}
 
   private async syncIfoodIfNeeded(
@@ -537,6 +540,7 @@ export class DeliveryService implements OnModuleInit {
   async createDelivery(
     deliveryData: CreateDeliveryDto,
     user: UserRequest,
+    options?: { skipCreditConsumption?: boolean; creditOrderId?: string },
   ): Promise<DeliveryResult> {
     const userFinded = await this.findOneUserById(user.id);
     let establishment;
@@ -588,8 +592,17 @@ export class DeliveryService implements OnModuleInit {
     }
 
     try {
+      const deliveryId = uuid();
+
+      if (!options?.skipCreditConsumption) {
+        await this.ifoodCreditsService.consumeCreditForOrder(
+          establishment.id,
+          options?.creditOrderId || deliveryId,
+        );
+      }
+
       const newDelivery = await this.deliveryRepository.save({
-        id: uuid(),
+        id: deliveryId,
         clientName,
         clientPhone,
         status: deliveryStatus,

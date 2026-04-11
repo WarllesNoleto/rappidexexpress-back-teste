@@ -171,7 +171,6 @@ export class IfoodCreditsService {
     const updated = await this.userRepository.findOneAndUpdate(
       {
         id: companyId,
-        useIfoodIntegration: true,
         ifoodOrdersAvailable: { $gte: 1 },
       },
       {
@@ -186,7 +185,7 @@ export class IfoodCreditsService {
 
     if (!updated.value) {
       throw new ForbiddenException(
-        'Sem créditos iFood disponíveis para importar/consumir novos pedidos.',
+        'Sem créditos disponíveis para criar novos pedidos.',
       );
     }
 

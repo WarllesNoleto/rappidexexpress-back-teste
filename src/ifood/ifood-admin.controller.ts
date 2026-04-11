@@ -170,11 +170,6 @@ export class IfoodAdminController {
       const deliveryDto =
         await this.ifoodOrdersService.buildCreateDeliveryDto(orderId);
 
-      await this.ifoodCreditsService.consumeCreditForOrder(
-          targetShopkeeperId,
-          orderId,
-        );
-
       const createdDelivery = await this.deliveryService.createDelivery(
         deliveryDto,
       {
@@ -185,6 +180,7 @@ export class IfoodAdminController {
         permission: 'admin' as any,
         cityId: '',
       },
+      { creditOrderId: orderId },
     );
 
     await this.ifoodOrderLinkService.createLink({
