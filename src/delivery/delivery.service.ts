@@ -863,10 +863,6 @@ export class DeliveryService implements OnModuleInit {
       isActive: true,
     };
 
-    if (cityId) {
-      where['cityId'] = cityId;
-    }
-
     console.log('Filtro usado para buscar usuários notificados:', where);
 
     const usersToNotify = await this.userRepository.find({ where });
@@ -874,6 +870,13 @@ export class DeliveryService implements OnModuleInit {
     console.log('Usuários encontrados para notificação:', usersToNotify.length);
 
     const usersNotificationsIds = usersToNotify
+      .filter((userToNotify: UserEntity) => {
+        if (userToNotify.type === UserType.SUPERADMIN) {
+          return true;
+        }
+
+        return !!cityId && userToNotify.cityId === cityId;
+      })
       .map((userToNotify: UserEntity) => {
         console.log('Usuário candidato à notificação:', {
           id: userToNotify.id,
