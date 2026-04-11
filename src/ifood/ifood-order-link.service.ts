@@ -30,36 +30,4 @@ export class IfoodOrderLinkService {
       createdAt: new Date(),
     });
   }
-
-  async findByIfoodOrderIds(ifoodOrderIds: string[]) {
-    if (!Array.isArray(ifoodOrderIds) || ifoodOrderIds.length === 0) {
-      return [];
-    }
-
-    const links = await this.ifoodOrderLinkRepository.find({
-      where: {
-        ifoodOrderId: {
-          $in: ifoodOrderIds,
-        },
-      } as any,
-    });
-
-    return Array.isArray(links) ? links : [];
-  }
-
-  async findByDeliveryIds(deliveryIds: string[]) {
-    if (!Array.isArray(deliveryIds) || deliveryIds.length === 0) {
-      return [];
-    }
-
-    const links = await this.ifoodOrderLinkRepository.find({
-      where: {
-        deliveryId: {
-          $in: deliveryIds,
-        },
-      } as any,
-    });
-
-    return Array.isArray(links) ? links : [];
-  }
 }
