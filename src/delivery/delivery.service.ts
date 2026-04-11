@@ -773,6 +773,46 @@ export class DeliveryService implements OnModuleInit {
     );
   }
 
+  async finishDeliveryFromIfood(orderId: string, event?: any) {
+    const ifoodLink =
+      await this.ifoodOrderLinkService.findByIfoodOrderId(orderId);
+
+    if (!ifoodLink) {
+      return;
+    }
+
+    const deliveryFinded = await this.deliveryRepository.findOne({
+      where: {
+        id: ifoodLink.deliveryId,
+      },
+      relations: { establishment: true },
+    });
+
+    if (!deliveryFinded || !deliveryFinded.isActive) {
+      return;
+    }
+
+    if (deliveryFinded.status === StatusDelivery.FINISHED) {
+      return;
+    }
+
+    const deliveryUpdated = await this.deliveryRepository.save({
+      ...deliveryFinded,
+      status: StatusDelivery.FINISHED,
+      finishedAt: addHours(new Date(), -3),
+      updatedAt: addHours(new Date(), -3),
+    });
+
+    this.ordersGateway.emitDeliveryUpdated(
+      DeliveryResult.fromEntity(deliveryUpdated),
+      deliveryUpdated.establishment?.cityId,
+    );
+
+    this.logger.log(
+      `Entrega ${deliveryFinded.id} finalizada no Rappidex por evento ${event?.fullCode || event?.code || 'CONCLUDED'} do iFood. OrderId: ${orderId}`,
+    );
+  }
+
   async findOneUserById(userId: string) {
     const user = await this.userRepository.findOneBy({ id: userId });
 

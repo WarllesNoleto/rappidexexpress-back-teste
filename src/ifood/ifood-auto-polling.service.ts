@@ -103,8 +103,20 @@ export class IfoodAutoPollingService
           event?.code === 'CAN' || event?.fullCode === 'CANCELLED',
       );
 
+      const conclusionEvents = freshEvents.filter(
+        (event) =>
+          event?.code === 'CON' || event?.fullCode === 'CONCLUDED',
+      );
+
       for (const event of cancellationEvents) {
         await this.deliveryService.cancelDeliveryFromIfood(
+          event.orderId,
+          event,
+        );
+      }
+
+      for (const event of conclusionEvents) {
+        await this.deliveryService.finishDeliveryFromIfood(
           event.orderId,
           event,
         );
