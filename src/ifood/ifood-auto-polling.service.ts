@@ -186,6 +186,15 @@ export class IfoodAutoPollingService
       1200,
     );
 
+    const activeDeliveryIds =
+      await this.deliveryService.findRecentActiveDeliveryIds(1500);
+
+    const linkedActiveOrderIds = (
+      await this.ifoodOrderLinkService.findByDeliveryIds(activeDeliveryIds)
+    )
+      .map((link) => link?.ifoodOrderId)
+      .filter(Boolean);
+
     const polledOrderIds = (Array.isArray(latestPolledEvents)
       ? latestPolledEvents
       : []
@@ -194,7 +203,11 @@ export class IfoodAutoPollingService
       .filter(Boolean);
 
     const candidateOrderIds = [
-      ...new Set([...recentOrderIdsFromDb, ...polledOrderIds]),
+      ...new Set([
+        ...recentOrderIdsFromDb,
+        ...polledOrderIds,
+        ...linkedActiveOrderIds,
+      ]),
     ];
 
     if (candidateOrderIds.length === 0) {

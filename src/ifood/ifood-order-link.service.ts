@@ -46,4 +46,20 @@ export class IfoodOrderLinkService {
 
     return Array.isArray(links) ? links : [];
   }
+
+  async findByDeliveryIds(deliveryIds: string[]) {
+    if (!Array.isArray(deliveryIds) || deliveryIds.length === 0) {
+      return [];
+    }
+
+    const links = await this.ifoodOrderLinkRepository.find({
+      where: {
+        deliveryId: {
+          $in: deliveryIds,
+        },
+      } as any,
+    });
+
+    return Array.isArray(links) ? links : [];
+  }
 }
