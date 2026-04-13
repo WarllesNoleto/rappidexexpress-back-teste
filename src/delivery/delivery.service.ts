@@ -750,10 +750,17 @@ export class DeliveryService implements OnModuleInit {
       return;
     }
 
+    const ifoodCancellationCode = event?.fullCode || event?.code || 'CANCELLED';
+    const ifoodCancellationNote = `Cancelamento iFood: ${ifoodCancellationCode} | OrderId: ${orderId}`;
+    const nextObservation = deliveryFinded.observation
+      ? `${deliveryFinded.observation} | ${ifoodCancellationNote}`
+      : ifoodCancellationNote;
+
     await this.deliveryRepository.save({
       ...deliveryFinded,
       status: StatusDelivery.CANCELED,
       isActive: false,
+      observation: nextObservation,
       updatedAt: addHours(new Date(), -3),
     });
 
@@ -1009,7 +1016,13 @@ export class DeliveryService implements OnModuleInit {
     userForRequest: UserEntity,
     queryParams: ListDeliveriesQueryDTO,
   ) {
-    const where: Record<string, any> = { isActive: true };
+    const selectedStatuses = queryParams.status
+      ? queryParams.status.split(',')
+      : [];
+    const includeCanceled = selectedStatuses.includes(StatusDelivery.CANCELED);
+    const where: Record<string, any> = {
+      isActive: includeCanceled ? { $in: [true, false] } : true,
+    };
 
     where['establishment.cityId'] = userForRequest.cityId;
 
@@ -1017,8 +1030,7 @@ export class DeliveryService implements OnModuleInit {
       userForRequest.type === UserType.ADMIN ||
       userForRequest.type === UserType.SUPERADMIN
     ) {
-      if (queryParams.status)
-        where['status'] = { $in: queryParams.status.split(',') };
+      if (selectedStatuses.length) where['status'] = { $in: selectedStatuses };
       if (queryParams.establishmentId)
         where['establishment.id'] = queryParams.establishmentId;
       if (queryParams.motoboyId) where['motoboy.id'] = queryParams.motoboyId;
@@ -1026,12 +1038,11 @@ export class DeliveryService implements OnModuleInit {
     }
 
     if (userForRequest.type === UserType.MOTOBOY) {
-      if (queryParams.status) {
-        const arrayOnStatus = queryParams.status.split(',');
-        where['status'] = { $in: arrayOnStatus };
+      if (selectedStatuses.length) {
+        where['status'] = { $in: selectedStatuses };
 
         // Se tiver um momento em que for necessario que o motoboy solicite todos os pedidos, ele vai conseguir ver tudo
-        if (!arrayOnStatus.includes(StatusDelivery.PENDING)) {
+        if (!selectedStatuses.includes(StatusDelivery.PENDING)) {
           where['motoboy.id'] = userForRequest.id;
         }
       } else {
@@ -1048,8 +1059,7 @@ export class DeliveryService implements OnModuleInit {
       userForRequest.type === UserType.SHOPKEEPERADMIN
     ) {
       where['establishment.id'] = userForRequest.id;
-      if (queryParams.status)
-        where['status'] = { $in: queryParams.status.split(',') };
+        if (selectedStatuses.length) where['status'] = { $in: selectedStatuses };
       if (queryParams.motoboyId) where['motoboy.id'] = queryParams.motoboyId;
     }
 
