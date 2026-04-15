@@ -27,6 +27,7 @@ import { StatusDelivery, UserType } from '../shared/constants/enums.constants';
 import { IfoodOrderLinkService } from '../ifood/ifood-order-link.service';
 import { IfoodOrdersService } from '../ifood/ifood-orders.service';
 import { IfoodCreditsService } from '../ifood/ifood-credits.service';
+import { IfoodEventService } from '../ifood/ifood-event.service';
 import { sendNotificationsFor } from 'src/shared/utils/notification.functions';
 import { OrdersGateway } from '../gateway/orders.gateway';
 
@@ -49,6 +50,8 @@ export class DeliveryService implements OnModuleInit {
     private readonly ifoodOrderLinkService: IfoodOrderLinkService,
     @Inject(forwardRef(() => IfoodCreditsService))
     private readonly ifoodCreditsService: IfoodCreditsService,
+    @Inject(forwardRef(() => IfoodEventService))
+    private readonly ifoodEventService: IfoodEventService,
   ) {}
 
   private async syncIfoodIfNeeded(
@@ -106,6 +109,15 @@ export class DeliveryService implements OnModuleInit {
 
       if (deliveryData.status === StatusDelivery.FINISHED) {
         await this.ifoodOrdersService.notifyArrivedAtDestination(orderId);
+
+        const hasDeliveryDropCodeRequested =
+          await this.ifoodEventService.hasDeliveryDropCodeRequested(orderId);
+
+        if (!hasDeliveryDropCodeRequested) {
+          throw new BadRequestException(
+            'O pedido ainda não recebeu o evento DELIVERY_DROP_CODE_REQUESTED no iFood.',
+          );
+        }
 
         if (!deliveryData.deliveryCode) {
           throw new BadRequestException(

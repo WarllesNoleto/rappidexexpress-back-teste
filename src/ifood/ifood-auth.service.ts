@@ -10,10 +10,22 @@ import axios from 'axios';
 @Injectable()
 export class IfoodAuthService {
   private readonly logger = new Logger(IfoodAuthService.name);
+  private cachedToken: { value: string; expiresAt: number } | null = null;
+
+  private static readonly TOKEN_EXPIRATION_BUFFER_MS = 60_000;
 
   constructor(private readonly configService: ConfigService) {}
 
   async getAccessToken(): Promise<string> {
+    if (
+      this.cachedToken &&
+      Date.now() <
+        this.cachedToken.expiresAt -
+          IfoodAuthService.TOKEN_EXPIRATION_BUFFER_MS
+    ) {
+      return this.cachedToken.value;
+    }
+
     const clientId = this.configService.get<string>('IFOOD_CLIENT_ID');
     const clientSecret = this.configService.get<string>('IFOOD_CLIENT_SECRET');
     const authMode = this.configService.get<string>('IFOOD_AUTH_MODE');
@@ -52,6 +64,17 @@ export class IfoodAuthService {
           'O iFood respondeu, mas não retornou accessToken.',
         );
       }
+
+      const expiresInSeconds = Number(response.data?.expiresIn ?? 0);
+      const expiresAt =
+        Number.isFinite(expiresInSeconds) && expiresInSeconds > 0
+          ? Date.now() + expiresInSeconds * 1000
+          : Date.now() + 15 * 60 * 1000;
+
+      this.cachedToken = {
+        value: response.data.accessToken,
+        expiresAt,
+      };
 
       return response.data.accessToken;
     } catch (error: any) {

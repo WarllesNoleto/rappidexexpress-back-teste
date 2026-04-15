@@ -22,6 +22,14 @@ export class IfoodEventService {
     return Array.isArray(events) ? events : [];
   }
 
+  async hasDeliveryDropCodeRequested(orderId: string) {
+    const events = await this.findByOrderId(orderId);
+
+    return events.some(
+      (event) => event?.fullCode === 'DELIVERY_DROP_CODE_REQUESTED',
+    );
+  }
+
  async findRecentEligibleImportEvents(limit = 500) {
     const events = await this.ifoodEventRepository.find({
       where: {

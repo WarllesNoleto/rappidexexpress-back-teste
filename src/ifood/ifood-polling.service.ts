@@ -41,6 +41,7 @@ export class IfoodPollingService {
           },
           params: {
             categories: 'ALL',
+            excludeHeartbeat: true,
           },
         },
       );
