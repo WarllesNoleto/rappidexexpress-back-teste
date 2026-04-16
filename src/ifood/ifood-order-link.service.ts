@@ -18,6 +18,18 @@ export class IfoodOrderLinkService {
     return this.ifoodOrderLinkRepository.findOneBy({ deliveryId });
   }
 
+  async findByDeliveryIds(deliveryIds: string[]) {
+    if (!deliveryIds.length) {
+      return [];
+    }
+
+    return this.ifoodOrderLinkRepository.find({
+      where: {
+        deliveryId: { $in: deliveryIds },
+      } as any,
+    });
+  }
+
   async createLink(data: {
     ifoodOrderId: string;
     ifoodDisplayId: string;

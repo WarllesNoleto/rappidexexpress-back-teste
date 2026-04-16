@@ -78,11 +78,15 @@ export class DeliveryResult {
   @Expose()
   isActive: boolean;
 
+  @Expose()
+  isIfoodOrder?: boolean;
+
   public static fromEntity(delivery: DeliveryEntity) {
     return plainToClass<DeliveryResult, DeliveryResult>(
       DeliveryResult,
       {
         ...delivery,
+        isIfoodOrder: (delivery as any).isIfoodOrder ?? false,
         establishmentId: delivery.establishment
           ? delivery.establishment.id
           : null,

@@ -315,8 +315,19 @@ export class DeliveryService implements OnModuleInit {
         : Promise.resolve(undefined),
     ]);
 
+    const ifoodLinks = await this.ifoodOrderLinkService.findByDeliveryIds(
+      deliveries.map((delivery) => delivery.id),
+    );
+    const ifoodDeliveryIds = new Set(
+      ifoodLinks.map((ifoodLink) => ifoodLink.deliveryId),
+    );
+    const deliveriesWithSource = deliveries.map((delivery) => ({
+      ...delivery,
+      isIfoodOrder: ifoodDeliveryIds.has(delivery.id),
+    }));
+
     return ListDeliverysResult.fromEntities(
-      deliveries,
+      deliveriesWithSource as any,
       deliveries.length,
       queryParams.page,
       count,
