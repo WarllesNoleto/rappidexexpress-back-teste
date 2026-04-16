@@ -14,6 +14,8 @@ import { IfoodAuthService } from './ifood-auth.service';
 export class IfoodPollingService {
   private readonly logger = new Logger(IfoodPollingService.name);
   private static readonly MAX_MERCHANTS_PER_POLLING_REQUEST = 100;
+  private static readonly DEFAULT_BATCH_DELAY_MS = 250;
+  private pollingQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly ifoodAuthService: IfoodAuthService,
@@ -23,56 +25,88 @@ export class IfoodPollingService {
   ) {}
 
   async pollEvents() {
-    const accessToken = await this.ifoodAuthService.getAccessToken();
-    const merchantIds = await this.resolvePollingMerchants();
+    const { events } = await this.pollEventsWithMetadata();
+    return events;
+  }
 
-    if (!Array.isArray(merchantIds) || merchantIds.length === 0) {
-      throw new InternalServerErrorException(
-        'Configure IFOOD_POLLING_MERCHANTS, IFOOD_TEST_MERCHANT_ID ou IFOOD_MERCHANT_ID no .env.',
-      );
-    }
+    async pollEventsWithMetadata() {
+    return this.withTokenRateLimit(async () => {
+      const accessToken = await this.ifoodAuthService.getAccessToken();
+      const merchantIds = await this.resolvePollingMerchants();
 
-    const merchantBatches = this.chunkMerchants(
-      merchantIds,
-      IfoodPollingService.MAX_MERCHANTS_PER_POLLING_REQUEST,
-    );
-    const events: any[] = [];
-
-    try {
-      for (const batch of merchantBatches) {
-        const response = await axios.get(
-          'https://merchant-api.ifood.com.br/events/v1.0/events:polling',
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'x-polling-merchants': batch.join(','),
-            },
-            params: {
-              categories: 'ALL',
-              excludeHeartbeat: true,
-            },
-          },
-          );
-
-        if (Array.isArray(response.data)) {
-          events.push(...response.data);
-        }
+      if (!Array.isArray(merchantIds) || merchantIds.length === 0) {
+        throw new InternalServerErrorException(
+          'Configure IFOOD_POLLING_MERCHANTS, IFOOD_TEST_MERCHANT_ID ou IFOOD_MERCHANT_ID no .env.',
+        );
       }
 
-      return events;
-    } catch (error: any) {
-      const status = error?.response?.status;
-      const data = error?.response?.data;
-
-      this.logger.error('Erro ao consultar eventos no polling do iFood', {
-        status,
-        data,
-      });
-
-      throw new InternalServerErrorException(
-        'Não foi possível consultar os eventos do iFood.',
+      const merchantBatches = this.chunkMerchants(
+        merchantIds,
+        IfoodPollingService.MAX_MERCHANTS_PER_POLLING_REQUEST,
       );
-    }
+      const delayBetweenBatchesMs = this.resolveBatchDelayMs();
+      const pollingParams = this.resolvePollingParams();
+      const events: any[] = [];
+
+      try {
+        for (let index = 0; index < merchantBatches.length; index += 1) {
+          const batch = merchantBatches[index];
+
+          if (
+            batch.length > IfoodPollingService.MAX_MERCHANTS_PER_POLLING_REQUEST
+          ) {
+            this.logger.error(
+              `Lote de merchants acima do limite do iFood (${batch.length} > ${IfoodPollingService.MAX_MERCHANTS_PER_POLLING_REQUEST}).`,
+            );
+          }
+
+          const response = await axios.get(
+            'https://merchant-api.ifood.com.br/events/v1.0/events:polling',
+            {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'x-polling-merchants': batch.join(','),
+              },
+              params: pollingParams,
+            },
+          );
+
+          if (Array.isArray(response.data)) {
+            events.push(...response.data);
+          }
+
+          const hasNextBatch = index < merchantBatches.length - 1;
+          if (hasNextBatch && delayBetweenBatchesMs > 0) {
+            await this.sleep(delayBetweenBatchesMs);
+          }
+        }
+
+        return {
+          events,
+          metadata: {
+            totalMerchants: merchantIds.length,
+            batches: merchantBatches.length,
+            maxMerchantsPerBatch: Math.max(
+              ...merchantBatches.map((batch) => batch.length),
+              0,
+            ),
+            batchDelayMs: delayBetweenBatchesMs,
+          },
+        };
+      } catch (error: any) {
+        const status = error?.response?.status;
+        const data = error?.response?.data;
+
+        this.logger.error('Erro ao consultar eventos no polling do iFood', {
+          status,
+          data,
+        });
+
+        throw new InternalServerErrorException(
+          'Não foi possível consultar os eventos do iFood.',
+        );
+      }
+    });
   }
 
   async acknowledgeEvents(eventIds: string[]) {
@@ -161,5 +195,81 @@ export class IfoodPollingService {
     }
 
     return chunks;
+  }
+
+  private resolvePollingParams() {
+    const types = this.readCsvEnv('IFOOD_POLLING_TYPES');
+    const groups = this.readCsvEnv('IFOOD_POLLING_GROUPS');
+    const fallbackAllCategoriesEnabled =
+      String(
+        this.configService.get('IFOOD_POLLING_ALL_CATEGORIES_FALLBACK') ?? 'true',
+      ) !== 'false';
+
+    const params: Record<string, any> = {
+      excludeHeartbeat: true,
+    };
+
+    if (types.length > 0) {
+      params.types = types.join(',');
+    }
+
+    if (groups.length > 0) {
+      params.groups = groups.join(',');
+    }
+
+    if (types.length === 0 && groups.length === 0 && fallbackAllCategoriesEnabled) {
+      params.categories = 'ALL';
+      this.logger.warn(
+        'IFOOD_POLLING_TYPES/IFOOD_POLLING_GROUPS não informados; aplicando fallback categories=ALL.',
+      );
+    }
+
+    return params;
+  }
+
+  private resolveBatchDelayMs() {
+    const rawDelay = Number(
+      this.configService.get('IFOOD_POLLING_BATCH_DELAY_MS') ??
+        IfoodPollingService.DEFAULT_BATCH_DELAY_MS,
+    );
+
+    if (!Number.isFinite(rawDelay) || rawDelay < 0) {
+      return IfoodPollingService.DEFAULT_BATCH_DELAY_MS;
+    }
+
+    return rawDelay;
+  }
+
+  private readCsvEnv(key: string) {
+    const value = this.configService.get<string>(key);
+
+    if (!value) {
+      return [];
+    }
+
+    return String(value)
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  private async withTokenRateLimit<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = this.pollingQueue;
+    let release: () => void = () => undefined;
+    this.pollingQueue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    await previous;
+
+    try {
+      return await operation();
+    } finally {
+      release();
+    }
+  }
+
+  private async sleep(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

@@ -30,7 +30,7 @@ export class IfoodEventService {
     );
   }
 
- async findRecentEligibleImportEvents(limit = 500) {
+  async findRecentEligibleImportEvents(limit = 500) {
     const events = await this.ifoodEventRepository.find({
       where: {
         $or: [
@@ -78,5 +78,21 @@ export class IfoodEventService {
         },
       } as any,
     );
+  }
+
+  async findUnacknowledgedEventIds(limit = 500) {
+    const events = await this.ifoodEventRepository.find({
+      where: {
+        acknowledged: false,
+      } as any,
+      take: limit,
+      select: {
+        eventId: true,
+      } as any,
+    });
+
+    return (Array.isArray(events) ? events : [])
+      .map((event) => String(event?.eventId || '').trim())
+      .filter(Boolean);
   }
 }
