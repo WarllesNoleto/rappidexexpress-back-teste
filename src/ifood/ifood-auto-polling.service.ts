@@ -33,7 +33,7 @@ export class IfoodAutoPollingService
       String(this.configService.get('IFOOD_POLLING_ENABLED')) === 'true';
 
     const pollingIntervalMs = Number(
-      this.configService.get('IFOOD_POLLING_INTERVAL_MS') || 45000,
+      this.configService.get('IFOOD_POLLING_INTERVAL_MS') || 30000,
     );
 
     if (!pollingEnabled) {

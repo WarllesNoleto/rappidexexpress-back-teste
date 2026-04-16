@@ -13,6 +13,7 @@ import { IfoodAuthService } from './ifood-auth.service';
 @Injectable()
 export class IfoodPollingService {
   private readonly logger = new Logger(IfoodPollingService.name);
+  private static readonly MAX_MERCHANTS_PER_POLLING_REQUEST = 100;
 
   constructor(
     private readonly ifoodAuthService: IfoodAuthService,
@@ -25,28 +26,40 @@ export class IfoodPollingService {
     const accessToken = await this.ifoodAuthService.getAccessToken();
     const merchantIds = await this.resolvePollingMerchants();
 
-    if (!merchantIds) {
+    if (!Array.isArray(merchantIds) || merchantIds.length === 0) {
       throw new InternalServerErrorException(
         'Configure IFOOD_POLLING_MERCHANTS, IFOOD_TEST_MERCHANT_ID ou IFOOD_MERCHANT_ID no .env.',
       );
     }
 
-    try {
-      const response = await axios.get(
-        'https://merchant-api.ifood.com.br/events/v1.0/events:polling',
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'x-polling-merchants': merchantIds,
-          },
-          params: {
-            categories: 'ALL',
-            excludeHeartbeat: true,
-          },
-        },
-      );
+    const merchantBatches = this.chunkMerchants(
+      merchantIds,
+      IfoodPollingService.MAX_MERCHANTS_PER_POLLING_REQUEST,
+    );
+    const events: any[] = [];
 
-      return response.data;
+    try {
+      for (const batch of merchantBatches) {
+        const response = await axios.get(
+          'https://merchant-api.ifood.com.br/events/v1.0/events:polling',
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'x-polling-merchants': batch.join(','),
+            },
+            params: {
+              categories: 'ALL',
+              excludeHeartbeat: true,
+            },
+          },
+          );
+
+        if (Array.isArray(response.data)) {
+          events.push(...response.data);
+        }
+      }
+
+      return events;
     } catch (error: any) {
       const status = error?.response?.status;
       const data = error?.response?.data;
@@ -62,7 +75,7 @@ export class IfoodPollingService {
     }
   }
 
- async acknowledgeEvents(eventIds: string[]) {
+  async acknowledgeEvents(eventIds: string[]) {
     if (!Array.isArray(eventIds) || eventIds.length === 0) {
       return;
     }
@@ -100,7 +113,7 @@ export class IfoodPollingService {
     }
   }
 
-   private async resolvePollingMerchants(): Promise<string> {
+  private async resolvePollingMerchants(): Promise<string[]> {
     const rawPollingMerchants = this.configService.get<string>(
       'IFOOD_POLLING_MERCHANTS',
     );
@@ -117,7 +130,7 @@ export class IfoodPollingService {
 
     const merchantIdsFromUsers = usersWithIfoodIntegration
       .map((user) => String(user.ifoodMerchantId || '').trim())
-      .filter(Boolean); 
+      .filter(Boolean);
     const merchants = [
       rawPollingMerchants,
       rawTestMerchant,
@@ -129,6 +142,24 @@ export class IfoodPollingService {
       .map((item) => item.trim())
       .filter(Boolean);
 
-    return Array.from(new Set(merchants)).join(',');
+    return Array.from(new Set(merchants));
+  }
+
+  private chunkMerchants(merchants: string[], chunkSize: number) {
+    if (
+      !Array.isArray(merchants) ||
+      merchants.length === 0 ||
+      chunkSize <= 0
+    ) {
+      return [];
+    }
+
+    const chunks: string[][] = [];
+
+    for (let index = 0; index < merchants.length; index += chunkSize) {
+      chunks.push(merchants.slice(index, index + chunkSize));
+    }
+
+    return chunks;
   }
 }
