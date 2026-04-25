@@ -278,6 +278,14 @@ export class IfoodOrdersService {
         orderId,
       });
 
+      if (this.isOrderInTerminalState(status, data)) {
+        this.logger.warn(
+          `Pedido ${orderId} já está em estado terminal no iFood; ignorando consulta de motivos de cancelamento.`,
+        );
+
+        return [];
+      }
+
       throw new InternalServerErrorException(
         'Não foi possível consultar os motivos de cancelamento no iFood.',
       );
@@ -381,6 +389,25 @@ export class IfoodOrdersService {
         'Não foi possível solicitar o cancelamento do pedido ao iFood.',
       );
     }
+  }
+
+  
+  private isOrderInTerminalState(status: number | undefined, data: any) {
+    if (![400, 404, 409, 410, 422].includes(Number(status))) {
+      return false;
+    }
+
+    const payload = JSON.stringify(data || '').toLowerCase();
+
+    return (
+      payload.includes('cancel') ||
+      payload.includes('canceled') ||
+      payload.includes('cancelled') ||
+      payload.includes('already') ||
+      payload.includes('finaliz') ||
+      payload.includes('finished') ||
+      payload.includes('conclu')
+    );
   }
 
   private pickCancellationReason(reasons: any[], preferredCode?: string) {

@@ -110,6 +110,17 @@ export class DeliveryService implements OnModuleInit {
       }
 
       if (deliveryData.status === StatusDelivery.FINISHED) {
+        const isOrderAlreadyCanceled = await this.isIfoodOrderCanceled(
+          orderId,
+          merchantId,
+        );
+
+        if (isOrderAlreadyCanceled) {
+          throw new BadRequestException(
+            'Este pedido foi cancelado no iFood e não pode ser finalizado no Rappidex. Cancele a entrega localmente.',
+          );
+        }
+
         await this.ifoodOrdersService.notifyArrivedAtDestination(
           orderId,
           merchantId,
@@ -158,6 +169,32 @@ export class DeliveryService implements OnModuleInit {
       throw new InternalServerErrorException(
         'Não foi possível sincronizar o status da entrega com o iFood.',
       );
+    }
+  }
+
+    private async isIfoodOrderCanceled(
+    orderId: string,
+    merchantId?: string | null,
+  ) {
+    try {
+      const orderDetails = await this.ifoodOrdersService.getOrderDetails(
+        orderId,
+        merchantId,
+      );
+
+      const orderStatus = String(
+        orderDetails?.orderStatus ||
+          orderDetails?.status ||
+          orderDetails?.metadata?.status ||
+          '',
+      ).toUpperCase();
+
+      return orderStatus.includes('CANCEL');
+    } catch (error: any) {
+      this.logger.warn(
+        `Não foi possível verificar o status do pedido iFood ${orderId} antes da finalização local. ${error?.message || error}`,
+      );
+      return false;
     }
   }
 
