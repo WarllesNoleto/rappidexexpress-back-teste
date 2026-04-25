@@ -9,6 +9,7 @@ import {
 } from '../database/entities';
 import { DeliveryModule } from '../delivery/delivery.module';
 import { IfoodAdminController } from './ifood-admin.controller';
+import { IfoodWebhookController } from './ifood-webhook.controller';
 import { IfoodAuthService } from './ifood-auth.service';
 import { IfoodAutoPollingService } from './ifood-auto-polling.service';
 import { IfoodEventService } from './ifood-event.service';
@@ -18,6 +19,7 @@ import { IfoodOrderLinkService } from './ifood-order-link.service';
 import { IfoodOrdersService } from './ifood-orders.service';
 import { IfoodPollingService } from './ifood-polling.service';
 import { IfoodReadinessService } from './ifood-readiness.service';
+import { IfoodWebhookService } from './ifood-webhook.service';
 
 @Module({
   imports: [
@@ -30,7 +32,7 @@ import { IfoodReadinessService } from './ifood-readiness.service';
       UserEntity,
     ]),
   ],
-  controllers: [IfoodAdminController],
+  controllers: [IfoodAdminController, IfoodWebhookController],
   providers: [
     IfoodAuthService,
     IfoodOrdersService,
@@ -41,6 +43,7 @@ import { IfoodReadinessService } from './ifood-readiness.service';
     IfoodReadinessService,
     IfoodEventService,
     IfoodCreditsService,
+    IfoodWebhookService,
   ],
   exports: [
     IfoodAuthService,
@@ -51,6 +54,7 @@ import { IfoodReadinessService } from './ifood-readiness.service';
     IfoodReadinessService,
     IfoodEventService,
     IfoodCreditsService,
+    IfoodWebhookService,
   ],
 })
 export class IfoodModule {}
