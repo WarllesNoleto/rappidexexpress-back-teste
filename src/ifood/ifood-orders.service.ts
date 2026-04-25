@@ -59,8 +59,10 @@ export class IfoodOrdersService {
     }
   }
 
-  async dispatchOrder(orderId: string) {
-    const accessToken = await this.ifoodAuthService.getAccessToken();
+  async dispatchOrder(orderId: string, merchantId?: string | null) {
+    const accessToken = await this.ifoodAuthService.getAccessToken({
+      merchantId,
+    });
 
     try {
       await axios.post(
@@ -99,8 +101,14 @@ export class IfoodOrdersService {
     }
   }
 
-  async assignDriver(orderId: string, motoboy: Partial<UserEntity>) {
-    const accessToken = await this.ifoodAuthService.getAccessToken();
+  async assignDriver(
+    orderId: string,
+    motoboy: Partial<UserEntity>,
+    merchantId?: string | null,
+  ) {
+    const accessToken = await this.ifoodAuthService.getAccessToken({
+      merchantId,
+    });
 
     try {
       await axios.post(
@@ -140,40 +148,53 @@ export class IfoodOrdersService {
     }
   }
 
-  async notifyGoingToOrigin(orderId: string) {
+  async notifyGoingToOrigin(orderId: string, merchantId?: string | null) {
     return this.postLogisticsWithoutBody(
       orderId,
       'goingToOrigin',
       'deslocamento para coleta',
+      merchantId,
     );
   }
 
-  async notifyArrivedAtOrigin(orderId: string) {
+  async notifyArrivedAtOrigin(orderId: string, merchantId?: string | null) {
     return this.postLogisticsWithoutBody(
       orderId,
       'arrivedAtOrigin',
       'chegada na origem',
+      merchantId,
     );
   }
 
-  async dispatchLogisticsOrder(orderId: string) {
+  async dispatchLogisticsOrder(orderId: string, merchantId?: string | null) {
     return this.postLogisticsWithoutBody(
       orderId,
       'dispatch',
       'saída para entrega',
+      merchantId,
     );
   }
 
-  async notifyArrivedAtDestination(orderId: string) {
+  async notifyArrivedAtDestination(
+    orderId: string,
+    merchantId?: string | null,
+  ) {
     return this.postLogisticsWithoutBody(
       orderId,
       'arrivedAtDestination',
       'chegada no destino',
+      merchantId,
     );
   }
 
-  async verifyDeliveryCode(orderId: string, code: string) {
-    const accessToken = await this.ifoodAuthService.getAccessToken();
+  async verifyDeliveryCode(
+    orderId: string,
+    code: string,
+    merchantId?: string | null,
+  ) {
+    const accessToken = await this.ifoodAuthService.getAccessToken({
+      merchantId,
+    });
     const normalizedCode = String(code || '').trim();
 
     if (!normalizedCode) {
@@ -223,8 +244,10 @@ export class IfoodOrdersService {
     }
   }
 
-  async getCancellationReasons(orderId: string) {
-    const accessToken = await this.ifoodAuthService.getAccessToken();
+  async getCancellationReasons(orderId: string, merchantId?: string | null) {
+    const accessToken = await this.ifoodAuthService.getAccessToken({
+      merchantId,
+    });
 
     try {
       const response = await axios.get(
@@ -264,8 +287,9 @@ export class IfoodOrdersService {
   async requestCancellation(
     orderId: string,
     reason = 'Cancelado no Rappidex.',
+    merchantId?: string | null,
   ) {
-    const reasons = await this.getCancellationReasons(orderId);
+    const reasons = await this.getCancellationReasons(orderId, merchantId);
 
     if (!Array.isArray(reasons) || reasons.length === 0) {
       return {
@@ -280,7 +304,10 @@ export class IfoodOrdersService {
       'IFOOD_DEFAULT_CANCELLATION_CODE',
     );
 
-        const selectedReason = this.pickCancellationReason(reasons, preferredCode);
+    const selectedReason = this.pickCancellationReason(
+      reasons,
+      preferredCode,
+    );
 
     if (!selectedReason) {
       return {
@@ -291,7 +318,9 @@ export class IfoodOrdersService {
       };
     }
 
-    const accessToken = await this.ifoodAuthService.getAccessToken();
+    const accessToken = await this.ifoodAuthService.getAccessToken({
+      merchantId,
+    });
 
     try {
       await axios.post(
@@ -582,8 +611,11 @@ export class IfoodOrdersService {
     orderId: string,
     endpoint: string,
     actionLabel: string,
+    merchantId?: string | null,
   ) {
-    const accessToken = await this.ifoodAuthService.getAccessToken();
+    const accessToken = await this.ifoodAuthService.getAccessToken({
+      merchantId,
+    });
 
     try {
       await axios.post(

@@ -76,6 +76,7 @@ export class DeliveryService implements OnModuleInit {
     }
 
     const orderId = ifoodLink.ifoodOrderId;
+    const merchantId = ifoodLink.merchantId;
 
     try {
       if (deliveryData.status === StatusDelivery.ONCOURSE) {
@@ -87,15 +88,15 @@ export class DeliveryService implements OnModuleInit {
           );
         }
 
-        await this.ifoodOrdersService.assignDriver(orderId, motoboy);
-        await this.ifoodOrdersService.notifyGoingToOrigin(orderId);
+        await this.ifoodOrdersService.assignDriver(orderId, motoboy, merchantId);
+        await this.ifoodOrdersService.notifyGoingToOrigin(orderId, merchantId);
         return;
       }
 
       if (deliveryData.status === StatusDelivery.COLLECTED) {
-        await this.ifoodOrdersService.notifyArrivedAtOrigin(orderId);
-        await this.ifoodOrdersService.dispatchLogisticsOrder(orderId);
-        await this.ifoodOrdersService.dispatchOrder(orderId);
+        await this.ifoodOrdersService.notifyArrivedAtOrigin(orderId, merchantId);
+        await this.ifoodOrdersService.dispatchLogisticsOrder(orderId, merchantId);
+        await this.ifoodOrdersService.dispatchOrder(orderId, merchantId);
         return;
       }
 
@@ -103,12 +104,16 @@ export class DeliveryService implements OnModuleInit {
         await this.ifoodOrdersService.requestCancellation(
           orderId,
           'Cancelado no Rappidex pela alteração do status da entrega.',
+          merchantId,
         );
         return;
       }
 
       if (deliveryData.status === StatusDelivery.FINISHED) {
-        await this.ifoodOrdersService.notifyArrivedAtDestination(orderId);
+        await this.ifoodOrdersService.notifyArrivedAtDestination(
+          orderId,
+          merchantId,
+        );
 
         const hasDeliveryDropCodeRequested =
           await this.ifoodEventService.hasDeliveryDropCodeRequested(orderId);
@@ -128,6 +133,7 @@ export class DeliveryService implements OnModuleInit {
         const verifyResult = await this.ifoodOrdersService.verifyDeliveryCode(
           orderId,
           deliveryData.deliveryCode,
+          merchantId,
         );
 
         if (verifyResult?.success === false) {
@@ -726,6 +732,7 @@ export class DeliveryService implements OnModuleInit {
       await this.ifoodOrdersService.requestCancellation(
         ifoodLink.ifoodOrderId,
         'Cancelado no Rappidex pela exclusão da entrega.',
+        ifoodLink.merchantId,
       );
     }
 
