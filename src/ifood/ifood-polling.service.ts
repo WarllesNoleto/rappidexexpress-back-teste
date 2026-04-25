@@ -96,6 +96,11 @@ export class IfoodPollingService {
       } catch (error: any) {
         const status = error?.response?.status;
         const data = error?.response?.data;
+        const unauthorizedMerchants = Array.isArray(
+          data?.error?.unauthorizedMerchants,
+        )
+          ? data.error.unauthorizedMerchants
+          : [];
 
         this.logger.error('Erro ao consultar eventos no polling do iFood', {
           status,
@@ -103,7 +108,7 @@ export class IfoodPollingService {
         });
 
         throw new InternalServerErrorException(
-          'Não foi possível consultar os eventos do iFood.',
+          this.buildPollingErrorMessage(status, unauthorizedMerchants),
         );
       }
     });
@@ -271,5 +276,16 @@ export class IfoodPollingService {
 
   private async sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private buildPollingErrorMessage(
+    status?: number,
+    unauthorizedMerchants: string[] = [],
+  ) {
+    if (status === 403 && unauthorizedMerchants.length > 0) {
+      return `Não foi possível consultar os eventos do iFood. Os merchants ${unauthorizedMerchants.join(', ')} não estão autorizados para o clientId informado. Revise o IFOOD_POLLING_MERCHANTS e os ifoodMerchantId de usuários ativos.`;
+    }
+
+    return 'Não foi possível consultar os eventos do iFood.';
   }
 }
