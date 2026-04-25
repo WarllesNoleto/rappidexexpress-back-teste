@@ -8,7 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
 import axios from 'axios';
 import { UserEntity } from '../database/entities';
-import { IfoodAuthService } from './ifood-auth.service';
+import { AuthContext, IfoodAuthService } from './ifood-auth.service';
 
 @Injectable()
 export class IfoodPollingService {
@@ -63,9 +63,7 @@ export class IfoodPollingService {
         {} as Record<
           string,
           {
-            authContext: Awaited<
-              ReturnType<typeof this.ifoodAuthService.resolveAuthContext>
-            >;
+            authContext: AuthContext;
             merchants: string[];
           }
         >,

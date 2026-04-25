@@ -27,6 +27,12 @@ import { StatusDelivery, UserType } from '../shared/constants/enums.constants';
 import { UserRequest } from '../shared/interfaces';
 import { addHours } from 'date-fns';
 
+type MotoboyDeliverySummary = {
+  name: string;
+  lastDeliveryDate: DeliveryEntity[];
+  id: string;
+};
+
 @Injectable()
 export class UserService {
   constructor(
@@ -95,7 +101,7 @@ export class UserService {
       });
       return UserResult.fromEntity(newUser);
     } catch (error) {
-      return error;
+      throw error;
     }
   }
 
@@ -164,7 +170,7 @@ export class UserService {
     try {
       users = await this.userRepository.find({ where, skip, take, order });
     } catch (error) {
-      return error;
+      throw error;
     }
 
     return ListUsersResult.fromEntities(users, users.length, queryParams.page);
@@ -222,7 +228,7 @@ export class UserService {
       });
       return UserResult.fromEntity(changedUser);
     } catch (error) {
-      return error;
+      throw error;
     }
   }
 
@@ -318,7 +324,7 @@ export class UserService {
       });
       return UserResult.fromEntity(changedUser);
     } catch (error) {
-      return error;
+      throw error;
     }
   }
 
@@ -329,7 +335,7 @@ export class UserService {
       });
       return UserResult.fromEntity(myself);
     } catch (error) {
-      return error;
+      throw error;
     }
   }
 
@@ -348,7 +354,7 @@ export class UserService {
       this.ensureCityAccess(requester, userFinded.cityId);
       return UserResult.fromEntity(userFinded);
     } catch (error) {
-      return error;
+      throw error;
     }
   }
 
@@ -434,12 +440,14 @@ export class UserService {
 
       return await this.changeNameForMotoboy(motoboysWithDeliveriesCount);
     } catch (error) {
-      return error;
+      throw error;
     }
   }
 
-  async changeNameForMotoboy(motoboysWithDeliveriesCount) {
-    const newArrayForMotoboys = [];
+  async changeNameForMotoboy(
+    motoboysWithDeliveriesCount: MotoboyDeliverySummary[],
+  ): Promise<Record<string, string>[]> {
+    const newArrayForMotoboys: Record<string, string>[] = [];
     motoboysWithDeliveriesCount.forEach((motoboy) => {
       let hour = 'sem ultima entrega';
       if (motoboy.lastDeliveryDate[0]) {
@@ -501,7 +509,7 @@ export class UserService {
         status: JSON.stringify(data.notification),
       };
       await this.logRepository.save(newLogError);
-      return error;
+      throw error;
     }
   }
 

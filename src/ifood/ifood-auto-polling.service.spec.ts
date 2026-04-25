@@ -143,4 +143,33 @@ describe('IfoodAutoPollingService', () => {
       'evt-retry',
     ]);
   });
+
+  it('deve cancelar entrega local também para evento CANCELLATION_REQUESTED', async () => {
+    const { service, deliveryService } = buildService({
+      pollingResult: {
+        events: [
+          {
+            id: 'evt-car',
+            orderId: 'order-car',
+            code: 'CAR',
+            fullCode: 'CANCELLATION_REQUESTED',
+          },
+        ],
+        metadata: {
+          maxMerchantsPerBatch: 1,
+        },
+      },
+    });
+
+    await (service as any).runPollingCycle();
+
+    expect(deliveryService.cancelDeliveryFromIfood).toHaveBeenCalledWith(
+      'order-car',
+      expect.objectContaining({
+        id: 'evt-car',
+        code: 'CAR',
+        fullCode: 'CANCELLATION_REQUESTED',
+      }),
+    );
+  });
 });

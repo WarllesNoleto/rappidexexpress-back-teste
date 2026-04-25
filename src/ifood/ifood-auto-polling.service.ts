@@ -133,7 +133,10 @@ export class IfoodAutoPollingService
 
       const cancellationEvents = freshEvents.filter(
         (event) =>
-          event?.code === 'CAN' || event?.fullCode === 'CANCELLED',
+          event?.code === 'CAN' ||
+          event?.fullCode === 'CANCELLED' ||
+          event?.code === 'CAR' ||
+          event?.fullCode === 'CANCELLATION_REQUESTED',
       );
 
       const conclusionEvents = freshEvents.filter(

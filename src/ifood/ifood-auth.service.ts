@@ -15,7 +15,7 @@ type AuthProfile = {
   clientSecret: string;
 };
 
-type AuthContext = {
+export type AuthContext = {
   cacheKey: string;
   credentials: AuthProfile;
   source: 'merchant' | 'profile' | 'legacy';
