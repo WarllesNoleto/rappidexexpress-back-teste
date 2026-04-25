@@ -19,7 +19,9 @@ export class IfoodImportService {
 
   async importFromEvents(events: any[]) {
     if (!Array.isArray(events) || events.length === 0) {
-      this.logger.log('Importação automática: nenhum evento recebido do iFood.');
+      this.logger.log(
+        'Importação automática: nenhum evento recebido do iFood.',
+      );
       return;
     }
 
@@ -38,11 +40,17 @@ export class IfoodImportService {
       return;
     }
 
-    const uniqueOrderIds = [
-      ...new Set(eligibleEvents.map((event) => event?.orderId).filter(Boolean)),
+    const uniqueOrders = [
+      ...new Map(
+        eligibleEvents
+          .filter((event) => event?.orderId)
+          .map((event) => [event.orderId, event]),
+      ).values(),
     ];
 
-    for (const orderId of uniqueOrderIds) {
+    for (const eventReference of uniqueOrders) {
+      const orderId = eventReference?.orderId;
+      const merchantId = eventReference?.merchantId ?? null;
       try {
         const existingLink =
           await this.ifoodOrderLinkService.findByIfoodOrderId(orderId);
@@ -70,7 +78,10 @@ export class IfoodImportService {
           continue;
         }
 
-        const order = await this.ifoodOrdersService.getOrderDetails(orderId);
+        const order = await this.ifoodOrdersService.getOrderDetails(
+          orderId,
+          merchantId,
+        );
         const targetShopkeeperId: string | null =
           await this.ifoodOrdersService.resolveTargetShopkeeperId(
             order?.merchant?.id,
@@ -84,7 +95,10 @@ export class IfoodImportService {
         }
 
         const deliveryDto =
-          await this.ifoodOrdersService.buildCreateDeliveryDto(orderId);
+          await this.ifoodOrdersService.buildCreateDeliveryDto(
+            orderId,
+            merchantId,
+          );
 
         const createdDelivery = await this.deliveryService.createDelivery(
           deliveryDto,
@@ -96,7 +110,7 @@ export class IfoodImportService {
             permission: 'admin' as any,
             cityId: '',
           },
-          { creditOrderId: orderId },          
+          { creditOrderId: orderId },
         );
 
         await this.ifoodOrderLinkService.createLink({
@@ -117,7 +131,7 @@ export class IfoodImportService {
       }
     }
   }
-async retryPendingImportsForCompany(companyId: string, limit = 500) {
+  async retryPendingImportsForCompany(companyId: string, limit = 500) {
     const recentEvents =
       await this.ifoodEventService.findRecentEligibleImportEvents(limit);
 

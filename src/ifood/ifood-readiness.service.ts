@@ -12,7 +12,13 @@ export class IfoodReadinessService {
   ) {}
 
   async getOrderReadiness(orderId: string, knownEvents: any[] = []) {
-    const orderAnalysis = await this.ifoodOrdersService.analyzeOrder(orderId);
+    const knownMerchantId =
+      knownEvents.find((event) => event?.orderId === orderId)?.merchantId ??
+      null;
+    const orderAnalysis = await this.ifoodOrdersService.analyzeOrder(
+      orderId,
+      knownMerchantId,
+    );
     const storedEvents = await this.ifoodEventService.findByOrderId(orderId);
 
     let polledEvents: any[] = [];
@@ -88,10 +94,10 @@ export class IfoodReadinessService {
       reason: hasCancelledEvent
         ? 'Pedido não pode virar entrega no Rappidex porque já possui evento de cancelamento.'
         : !hasEligibleImportEvent
-        ? 'Pedido ainda não possui evento elegível para importação. Aguarde RTP ou DSP.'
-        : canCreateRappidexDelivery
-        ? 'Pedido apto para virar entrega no Rappidex.'
-        : 'Pedido não está apto para virar entrega no Rappidex.',
+          ? 'Pedido ainda não possui evento elegível para importação. Aguarde RTP ou DSP.'
+          : canCreateRappidexDelivery
+            ? 'Pedido apto para virar entrega no Rappidex.'
+            : 'Pedido não está apto para virar entrega no Rappidex.',
     };
   }
 }

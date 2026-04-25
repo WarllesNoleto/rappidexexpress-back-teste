@@ -52,19 +52,24 @@ export class UserEntity {
     //   auth: string;
     //   p256dh: string;
     // };
-
   };
 
   @Column()
   token: string;
 
- @Column({ default: false })
+  @Column({ default: false })
   useIfoodIntegration: boolean;
 
   @Column({ nullable: true })
   ifoodMerchantId?: string;
 
-   @Column({ default: 0 })
+  @Column({ nullable: true })
+  ifoodClientId?: string;
+
+  @Column({ nullable: true })
+  ifoodClientSecret?: string;
+
+  @Column({ default: 0 })
   ifoodOrdersReleased: number;
 
   @Column({ default: 0 })

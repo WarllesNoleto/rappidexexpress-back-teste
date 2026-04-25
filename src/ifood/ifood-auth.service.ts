@@ -5,36 +5,60 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
+import { MongoRepository } from 'typeorm';
+import { UserEntity } from '../database/entities';
+
+type AuthProfile = {
+  clientId: string;
+  clientSecret: string;
+};
+
+type AuthContext = {
+  cacheKey: string;
+  credentials: AuthProfile;
+  source: 'merchant' | 'profile' | 'legacy';
+  profileKey?: string;
+  merchantId?: string;
+};
+
+type TokenCache = {
+  value: string;
+  expiresAt: number;
+};
 
 @Injectable()
 export class IfoodAuthService {
   private readonly logger = new Logger(IfoodAuthService.name);
-  private cachedToken: { value: string; expiresAt: number } | null = null;
+  private readonly cachedTokens: Record<string, TokenCache> = {};
 
   private static readonly TOKEN_EXPIRATION_BUFFER_MS = 60_000;
+  private static readonly DEFAULT_PROFILE_KEY = 'default';
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    @InjectRepository(UserEntity)
+    private readonly userRepository: MongoRepository<UserEntity>,
+  ) {}
 
-  async getAccessToken(): Promise<string> {
+  async getAccessToken(options?: {
+    merchantId?: string | null;
+    profileKey?: string | null;
+  }): Promise<string> {
+    const context = await this.resolveAuthContext(options);
+
+    const cachedToken = this.cachedTokens[context.cacheKey];
+
     if (
-      this.cachedToken &&
+      cachedToken &&
       Date.now() <
-        this.cachedToken.expiresAt -
-          IfoodAuthService.TOKEN_EXPIRATION_BUFFER_MS
+        cachedToken.expiresAt - IfoodAuthService.TOKEN_EXPIRATION_BUFFER_MS
     ) {
-      return this.cachedToken.value;
+      return cachedToken.value;
     }
 
-    const clientId = this.configService.get<string>('IFOOD_CLIENT_ID');
-    const clientSecret = this.configService.get<string>('IFOOD_CLIENT_SECRET');
     const authMode = this.configService.get<string>('IFOOD_AUTH_MODE');
-
-    if (!clientId || !clientSecret) {
-      throw new BadRequestException(
-        'IFOOD_CLIENT_ID ou IFOOD_CLIENT_SECRET não configurados no .env.',
-      );
-    }
 
     if (authMode !== 'centralized') {
       throw new BadRequestException(
@@ -44,8 +68,8 @@ export class IfoodAuthService {
 
     const body = new URLSearchParams({
       grantType: 'client_credentials',
-      clientId,
-      clientSecret,
+      clientId: context.credentials.clientId,
+      clientSecret: context.credentials.clientSecret,
     }).toString();
 
     try {
@@ -71,7 +95,7 @@ export class IfoodAuthService {
           ? Date.now() + expiresInSeconds * 1000
           : Date.now() + 15 * 60 * 1000;
 
-      this.cachedToken = {
+      this.cachedTokens[context.cacheKey] = {
         value: response.data.accessToken,
         expiresAt,
       };
@@ -84,11 +108,205 @@ export class IfoodAuthService {
       this.logger.error('Erro ao buscar token do iFood', {
         status,
         data,
+        source: context.source,
+        profileKey: context.profileKey,
+        merchantId: context.merchantId,
       });
 
       throw new InternalServerErrorException(
         'Não foi possível obter o token do iFood.',
       );
+    }
+  }
+
+  async resolveAuthContext(options?: {
+    merchantId?: string | null;
+    profileKey?: string | null;
+  }): Promise<AuthContext> {
+    const normalizedMerchantId = String(options?.merchantId || '').trim();
+
+    if (normalizedMerchantId) {
+      const merchantCredentials =
+        await this.findMerchantCredentials(normalizedMerchantId);
+
+      if (merchantCredentials) {
+        return {
+          cacheKey: `merchant:${normalizedMerchantId}`,
+          credentials: merchantCredentials,
+          source: 'merchant',
+          merchantId: normalizedMerchantId,
+        };
+      }
+    }
+
+    const profileKey = this.resolveProfileKey(
+      options?.profileKey,
+      normalizedMerchantId,
+    );
+    const profiles = this.getAuthProfiles();
+    const profileCredentials = profiles[profileKey];
+
+    if (profileCredentials) {
+      return {
+        cacheKey: `profile:${profileKey}`,
+        credentials: profileCredentials,
+        source: 'profile',
+        profileKey,
+        merchantId: normalizedMerchantId || undefined,
+      };
+    }
+
+    const legacyClientId = this.configService.get<string>('IFOOD_CLIENT_ID');
+    const legacyClientSecret = this.configService.get<string>(
+      'IFOOD_CLIENT_SECRET',
+    );
+
+    if (legacyClientId && legacyClientSecret) {
+      return {
+        cacheKey: `legacy:${profileKey}`,
+        credentials: {
+          clientId: legacyClientId,
+          clientSecret: legacyClientSecret,
+        },
+        source: 'legacy',
+        profileKey,
+        merchantId: normalizedMerchantId || undefined,
+      };
+    }
+
+    throw new BadRequestException(
+      `Credenciais do iFood não encontradas para o merchant ${normalizedMerchantId || '(não informado)'} e perfil ${profileKey}. Configure credenciais no cadastro da empresa, IFOOD_AUTH_PROFILES ou IFOOD_CLIENT_ID/IFOOD_CLIENT_SECRET.`,
+    );
+  }
+
+  resolveProfileKey(
+    requestedProfileKey?: string | null,
+    merchantId?: string | null,
+  ): string {
+    const normalizedRequestedProfile = String(requestedProfileKey || '').trim();
+
+    if (normalizedRequestedProfile) {
+      return normalizedRequestedProfile;
+    }
+
+    const merchantProfileMap = this.getMerchantProfileMap();
+    const normalizedMerchantId = String(merchantId || '').trim();
+
+    if (normalizedMerchantId && merchantProfileMap[normalizedMerchantId]) {
+      return merchantProfileMap[normalizedMerchantId];
+    }
+
+    return IfoodAuthService.DEFAULT_PROFILE_KEY;
+  }
+
+  private async findMerchantCredentials(
+    merchantId: string,
+  ): Promise<AuthProfile | null> {
+    const mappedUser = await this.userRepository.findOne({
+      where: {
+        useIfoodIntegration: true,
+        ifoodMerchantId: merchantId,
+        isActive: true,
+      } as any,
+      order: {
+        updatedAt: 'DESC',
+      },
+    });
+
+    const clientId = String(mappedUser?.ifoodClientId || '').trim();
+    const clientSecret = String(mappedUser?.ifoodClientSecret || '').trim();
+
+    if (!clientId || !clientSecret) {
+      return null;
+    }
+
+    return {
+      clientId,
+      clientSecret,
+    };
+  }
+
+  private getAuthProfiles(): Record<string, AuthProfile> {
+    const rawProfiles = this.configService.get<string>('IFOOD_AUTH_PROFILES');
+
+    if (!rawProfiles) {
+      return {};
+    }
+
+    try {
+      const parsed = JSON.parse(rawProfiles);
+
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        this.logger.warn(
+          'IFOOD_AUTH_PROFILES inválido: use um objeto JSON no formato {"perfil":{"clientId":"...","clientSecret":"..."}}.',
+        );
+        return {};
+      }
+
+      return Object.entries(parsed).reduce(
+        (acc, [key, profile]) => {
+          const normalizedKey = String(key || '').trim();
+          const clientId = String((profile as any)?.clientId || '').trim();
+          const clientSecret = String(
+            (profile as any)?.clientSecret || '',
+          ).trim();
+
+          if (normalizedKey && clientId && clientSecret) {
+            acc[normalizedKey] = {
+              clientId,
+              clientSecret,
+            };
+          }
+
+          return acc;
+        },
+        {} as Record<string, AuthProfile>,
+      );
+    } catch (error) {
+      this.logger.warn(
+        'IFOOD_AUTH_PROFILES inválido: não foi possível fazer parse do JSON.',
+      );
+      return {};
+    }
+  }
+
+  private getMerchantProfileMap(): Record<string, string> {
+    const rawMap = this.configService.get<string>(
+      'IFOOD_MERCHANT_AUTH_PROFILE_MAP',
+    );
+
+    if (!rawMap) {
+      return {};
+    }
+
+    try {
+      const parsed = JSON.parse(rawMap);
+
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        this.logger.warn(
+          'IFOOD_MERCHANT_AUTH_PROFILE_MAP inválido: use um objeto JSON no formato {"merchantId":"perfil"}.',
+        );
+        return {};
+      }
+
+      return Object.entries(parsed).reduce(
+        (acc, [merchantId, profileKey]) => {
+          const normalizedMerchantId = String(merchantId || '').trim();
+          const normalizedProfileKey = String(profileKey || '').trim();
+
+          if (normalizedMerchantId && normalizedProfileKey) {
+            acc[normalizedMerchantId] = normalizedProfileKey;
+          }
+
+          return acc;
+        },
+        {} as Record<string, string>,
+      );
+    } catch (error) {
+      this.logger.warn(
+        'IFOOD_MERCHANT_AUTH_PROFILE_MAP inválido: não foi possível fazer parse do JSON.',
+      );
+      return {};
     }
   }
 }

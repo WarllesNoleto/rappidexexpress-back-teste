@@ -52,6 +52,14 @@ export class CreateUserDto {
   @IsString()
   @IsOptional()
   ifoodMerchantId?: string;
+  
+  @IsString()
+  @IsOptional()
+  ifoodClientId?: string;
+
+  @IsString()
+  @IsOptional()
+  ifoodClientSecret?: string;
 
   @IsOptional()
   @IsNumber()

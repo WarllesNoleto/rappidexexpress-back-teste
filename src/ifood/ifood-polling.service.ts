@@ -29,9 +29,8 @@ export class IfoodPollingService {
     return events;
   }
 
-    async pollEventsWithMetadata() {
+  async pollEventsWithMetadata() {
     return this.withTokenRateLimit(async () => {
-      const accessToken = await this.ifoodAuthService.getAccessToken();
       const merchantIds = await this.resolvePollingMerchants();
 
       if (!Array.isArray(merchantIds) || merchantIds.length === 0) {
@@ -40,54 +39,128 @@ export class IfoodPollingService {
         );
       }
 
-      const merchantBatches = this.chunkMerchants(
-        merchantIds,
-        IfoodPollingService.MAX_MERCHANTS_PER_POLLING_REQUEST,
+      const merchantAuthContexts = await Promise.all(
+        merchantIds.map(async (merchantId) => ({
+          merchantId,
+          authContext: await this.ifoodAuthService.resolveAuthContext({
+            merchantId,
+          }),
+        })),
       );
+      
+      const merchantsByAuthContext = merchantAuthContexts.reduce(
+        (acc, entry) => {
+          if (!acc[entry.authContext.cacheKey]) {
+            acc[entry.authContext.cacheKey] = {
+              authContext: entry.authContext,
+              merchants: [],
+            };
+          }
+
+          acc[entry.authContext.cacheKey].merchants.push(entry.merchantId);
+          return acc;
+        },
+        {} as Record<
+          string,
+          {
+            authContext: Awaited<
+              ReturnType<typeof this.ifoodAuthService.resolveAuthContext>
+            >;
+            merchants: string[];
+          }
+        >,
+      );
+
       const delayBetweenBatchesMs = this.resolveBatchDelayMs();
       const pollingParams = this.resolvePollingParams();
       const events: any[] = [];
+      const pollingProfilesSummary: Array<{
+        profileKey: string;
+        merchants: number;
+        batches: number;
+      }> = [];
 
       try {
-        for (let index = 0; index < merchantBatches.length; index += 1) {
-          const batch = merchantBatches[index];
+        const authContextEntries = Object.values(merchantsByAuthContext);
 
-          if (
-            batch.length > IfoodPollingService.MAX_MERCHANTS_PER_POLLING_REQUEST
-          ) {
-            this.logger.error(
-              `Lote de merchants acima do limite do iFood (${batch.length} > ${IfoodPollingService.MAX_MERCHANTS_PER_POLLING_REQUEST}).`,
-            );
-          }
-
-          const response = await axios.get(
-            'https://merchant-api.ifood.com.br/events/v1.0/events:polling',
-            {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                'x-polling-merchants': batch.join(','),
-              },
-              params: pollingParams,
-            },
+        for (
+          let contextIndex = 0;
+          contextIndex < authContextEntries.length;
+          contextIndex += 1
+        ) {
+          const currentContextEntry = authContextEntries[contextIndex];
+          const profileMerchants = currentContextEntry.merchants;
+          const accessToken = await this.ifoodAuthService.getAccessToken({
+            merchantId: currentContextEntry.authContext.merchantId,
+            profileKey: currentContextEntry.authContext.profileKey,
+          });
+          const merchantBatches = this.chunkMerchants(
+            profileMerchants,
+            IfoodPollingService.MAX_MERCHANTS_PER_POLLING_REQUEST,
           );
 
-          if (Array.isArray(response.data)) {
-            events.push(...response.data);
-          }
+          for (let index = 0; index < merchantBatches.length; index += 1) {
+            const batch = merchantBatches[index];
 
-          const hasNextBatch = index < merchantBatches.length - 1;
-          if (hasNextBatch && delayBetweenBatchesMs > 0) {
-            await this.sleep(delayBetweenBatchesMs);
+            if (
+              batch.length >
+              IfoodPollingService.MAX_MERCHANTS_PER_POLLING_REQUEST
+            ) {
+              this.logger.error(
+                `Lote de merchants acima do limite do iFood (${batch.length} > ${IfoodPollingService.MAX_MERCHANTS_PER_POLLING_REQUEST}).`,
+              );
+            }
+
+            const response = await axios.get(
+              'https://merchant-api.ifood.com.br/events/v1.0/events:polling',
+              {
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  'x-polling-merchants': batch.join(','),
+                },
+                params: pollingParams,
+              },
+            );
+
+            if (Array.isArray(response.data)) {
+              events.push(...response.data);
+            }
+
+            const hasNextBatchInProfile = index < merchantBatches.length - 1;
+            const hasMoreProfilesToRun =
+              contextIndex < authContextEntries.length - 1;
+
+            if (
+              (hasNextBatchInProfile || hasMoreProfilesToRun) &&
+              delayBetweenBatchesMs > 0
+            ) {
+              await this.sleep(delayBetweenBatchesMs);
+            }
           }
+          
+          pollingProfilesSummary.push({
+            profileKey:
+              currentContextEntry.authContext.profileKey ||
+              currentContextEntry.authContext.merchantId ||
+              currentContextEntry.authContext.source,
+            merchants: profileMerchants.length,
+            batches: merchantBatches.length,
+          });
         }
 
         return {
           events,
           metadata: {
             totalMerchants: merchantIds.length,
-            batches: merchantBatches.length,
+            profiles: pollingProfilesSummary,
+            batches: pollingProfilesSummary.reduce(
+              (acc, profile) => acc + profile.batches,
+              0,
+            ),
             maxMerchantsPerBatch: Math.max(
-              ...merchantBatches.map((batch) => batch.length),
+              ...pollingProfilesSummary.map((profile) =>
+                Math.ceil(profile.merchants / Math.max(profile.batches, 1)),
+              ),
               0,
             ),
             batchDelayMs: delayBetweenBatchesMs,
@@ -185,11 +258,7 @@ export class IfoodPollingService {
   }
 
   private chunkMerchants(merchants: string[], chunkSize: number) {
-    if (
-      !Array.isArray(merchants) ||
-      merchants.length === 0 ||
-      chunkSize <= 0
-    ) {
+    if (!Array.isArray(merchants) || merchants.length === 0 || chunkSize <= 0) {
       return [];
     }
 
@@ -207,7 +276,8 @@ export class IfoodPollingService {
     const groups = this.readCsvEnv('IFOOD_POLLING_GROUPS');
     const fallbackAllCategoriesEnabled =
       String(
-        this.configService.get('IFOOD_POLLING_ALL_CATEGORIES_FALLBACK') ?? 'true',
+        this.configService.get('IFOOD_POLLING_ALL_CATEGORIES_FALLBACK') ??
+          'true',
       ) !== 'false';
 
     const params: Record<string, any> = {
@@ -222,7 +292,11 @@ export class IfoodPollingService {
       params.groups = groups.join(',');
     }
 
-    if (types.length === 0 && groups.length === 0 && fallbackAllCategoriesEnabled) {
+    if (
+      types.length === 0 &&
+      groups.length === 0 &&
+      fallbackAllCategoriesEnabled
+    ) {
       params.categories = 'ALL';
       this.logger.warn(
         'IFOOD_POLLING_TYPES/IFOOD_POLLING_GROUPS não informados; aplicando fallback categories=ALL.',
@@ -283,7 +357,7 @@ export class IfoodPollingService {
     unauthorizedMerchants: string[] = [],
   ) {
     if (status === 403 && unauthorizedMerchants.length > 0) {
-      return `Não foi possível consultar os eventos do iFood. Os merchants ${unauthorizedMerchants.join(', ')} não estão autorizados para o clientId informado. Revise o IFOOD_POLLING_MERCHANTS e os ifoodMerchantId de usuários ativos.`;
+      return `Não foi possível consultar os eventos do iFood. Os merchants ${unauthorizedMerchants.join(', ')} não estão autorizados para o clientId informado. Revise o IFOOD_POLLING_MERCHANTS, IFOOD_MERCHANT_AUTH_PROFILE_MAP e os ifoodMerchantId de usuários ativos.`;
     }
 
     return 'Não foi possível consultar os eventos do iFood.';

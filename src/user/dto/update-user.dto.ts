@@ -59,6 +59,14 @@ export class UpdateUserDto {
   @IsOptional()
   ifoodMerchantId?: string;
   
+  @IsString()
+  @IsOptional()
+  ifoodClientId?: string;
+
+  @IsString()
+  @IsOptional()
+  ifoodClientSecret?: string;
+
   @IsOptional()
   @IsNumber()
   ifoodOrdersReleased?: number;

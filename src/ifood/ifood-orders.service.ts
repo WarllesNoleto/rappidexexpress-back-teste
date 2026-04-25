@@ -27,8 +27,10 @@ export class IfoodOrdersService {
     private readonly userRepository: MongoRepository<UserEntity>,
   ) {}
 
-  async getOrderDetails(orderId: string) {
-    const accessToken = await this.ifoodAuthService.getAccessToken();
+  async getOrderDetails(orderId: string, merchantId?: string | null) {
+    const accessToken = await this.ifoodAuthService.getAccessToken({
+      merchantId,
+    });
 
     try {
       const response = await axios.get(
@@ -57,7 +59,7 @@ export class IfoodOrdersService {
     }
   }
 
-   async dispatchOrder(orderId: string) {
+  async dispatchOrder(orderId: string) {
     const accessToken = await this.ifoodAuthService.getAccessToken();
 
     try {
@@ -72,7 +74,9 @@ export class IfoodOrdersService {
         },
       );
 
-      this.logger.log(`Dispatch do pedido enviado ao iFood com sucesso. OrderId: ${orderId}`);
+      this.logger.log(
+        `Dispatch do pedido enviado ao iFood com sucesso. OrderId: ${orderId}`,
+      );
 
       return {
         success: true,
@@ -95,7 +99,7 @@ export class IfoodOrdersService {
     }
   }
 
-    async assignDriver(orderId: string, motoboy: Partial<UserEntity>) {
+  async assignDriver(orderId: string, motoboy: Partial<UserEntity>) {
     const accessToken = await this.ifoodAuthService.getAccessToken();
 
     try {
@@ -114,7 +118,9 @@ export class IfoodOrdersService {
         },
       );
 
-      this.logger.log(`Entregador vinculado ao pedido no iFood. OrderId: ${orderId}`);
+      this.logger.log(
+        `Entregador vinculado ao pedido no iFood. OrderId: ${orderId}`,
+      );
 
       return { success: true, orderId };
     } catch (error: any) {
@@ -167,242 +173,240 @@ export class IfoodOrdersService {
   }
 
   async verifyDeliveryCode(orderId: string, code: string) {
-  const accessToken = await this.ifoodAuthService.getAccessToken();
-  const normalizedCode = String(code || '').trim();
+    const accessToken = await this.ifoodAuthService.getAccessToken();
+    const normalizedCode = String(code || '').trim();
 
-  if (!normalizedCode) {
-    throw new BadRequestException(
-      'Informe o código de entrega do iFood.',
-    );
-  }
-
-  try {
-    const response = await axios.post(
-      `https://merchant-api.ifood.com.br/logistics/v1.0/orders/${orderId}/verifyDeliveryCode`,
-      {
-        code: normalizedCode,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      },
-    );
-
-    this.logger.log(`Código de entrega verificado no iFood. OrderId: ${orderId}`);
-
-    return response.data;
-  } catch (error: any) {
-    const status = error?.response?.status;
-    const data = error?.response?.data;
-    const description = data?.description || data?.error?.message || '';
-
-    this.logger.error('Erro ao validar código de entrega no iFood', {
-      status,
-      data,
-      orderId,
-    });
-
-    if (
-      status === 400 &&
-      String(description).toLowerCase().includes('invalid')
-    ) {
-      throw new BadRequestException('Código de entrega do iFood inválido.');
+    if (!normalizedCode) {
+      throw new BadRequestException('Informe o código de entrega do iFood.');
     }
 
-    throw new InternalServerErrorException(
-      'Não foi possível validar o código de entrega no iFood.',
-    );
-  }
-}
-
-async getCancellationReasons(orderId: string) {
-  const accessToken = await this.ifoodAuthService.getAccessToken();
-
-  try {
-    const response = await axios.get(
-      `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/cancellationReasons`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
+    try {
+      const response = await axios.post(
+        `https://merchant-api.ifood.com.br/logistics/v1.0/orders/${orderId}/verifyDeliveryCode`,
+        {
+          code: normalizedCode,
         },
-        validateStatus: (status) => status === 200 || status === 204,
-      },
-    );
-
-    if (response.status === 204) {
-      this.logger.warn(
-        `Pedido ${orderId} sem políticas de cancelamento ativas no iFood.`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        },
       );
-      return [];
+
+      this.logger.log(
+        `Código de entrega verificado no iFood. OrderId: ${orderId}`,
+      );
+
+      return response.data;
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const data = error?.response?.data;
+      const description = data?.description || data?.error?.message || '';
+
+      this.logger.error('Erro ao validar código de entrega no iFood', {
+        status,
+        data,
+        orderId,
+      });
+
+      if (
+        status === 400 &&
+        String(description).toLowerCase().includes('invalid')
+      ) {
+        throw new BadRequestException('Código de entrega do iFood inválido.');
+      }
+
+      throw new InternalServerErrorException(
+        'Não foi possível validar o código de entrega no iFood.',
+      );
     }
-
-    return Array.isArray(response.data) ? response.data : [];
-  } catch (error: any) {
-    const status = error?.response?.status;
-    const data = error?.response?.data;
-
-    this.logger.error('Erro ao consultar motivos de cancelamento no iFood', {
-      status,
-      data,
-      orderId,
-    });
-
-    throw new InternalServerErrorException(
-      'Não foi possível consultar os motivos de cancelamento no iFood.',
-    );
-  }
-}
-
-async requestCancellation(
-  orderId: string,
-  reason = 'Cancelado no Rappidex.',
-) {
-  const reasons = await this.getCancellationReasons(orderId);
-
-  if (!Array.isArray(reasons) || reasons.length === 0) {
-    return {
-      success: false,
-      accepted: false,
-      orderId,
-      message: 'Pedido sem políticas de cancelamento ativas no iFood.',
-    };
   }
 
-  const preferredCode = this.configService.get<string>(
-    'IFOOD_DEFAULT_CANCELLATION_CODE',
-  );
+  async getCancellationReasons(orderId: string) {
+    const accessToken = await this.ifoodAuthService.getAccessToken();
 
-  const selectedReason = this.pickCancellationReason(reasons, preferredCode);
-
-  if (!selectedReason) {
-    return {
-      success: false,
-      accepted: false,
-      orderId,
-      message: 'Nenhum motivo de cancelamento válido foi encontrado.',
-    };
-  }
-
-  const accessToken = await this.ifoodAuthService.getAccessToken();
-
-  try {
-    await axios.post(
-      `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/requestCancellation`,
-      {
-        reason,
-        cancellationCode: selectedReason.rawCode,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
+    try {
+      const response = await axios.get(
+        `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/cancellationReasons`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+          validateStatus: (status) => status === 200 || status === 204,
         },
-      },
-    );
+      );
 
-    this.logger.warn(
-      `Solicitação de cancelamento enviada ao iFood. OrderId: ${orderId}. Código: ${selectedReason.code}`,
-    );
+      if (response.status === 204) {
+        this.logger.warn(
+          `Pedido ${orderId} sem políticas de cancelamento ativas no iFood.`,
+        );
+        return [];
+      }
 
-    return {
-      success: true,
-      accepted: true,
-      orderId,
-      cancellationCode: selectedReason.code,
-      message: 'Solicitação de cancelamento enviada ao iFood.',
-    };
-  } catch (error: any) {
-    const status = error?.response?.status;
-    const data = error?.response?.data;
-    const responseCode = data?.code || data?.error?.code || '';
-    const responseMessage = data?.message || data?.error?.message || '';
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const data = error?.response?.data;
 
-    this.logger.error('Erro ao solicitar cancelamento do pedido no iFood', {
-      status,
-      data,
-      orderId,
-    });
+      this.logger.error('Erro ao consultar motivos de cancelamento no iFood', {
+        status,
+        data,
+        orderId,
+      });
 
-    if (
-      status === 400 &&
-      (
-        responseCode === 'OrderHasACancellationInProgress' ||
-        responseCode === 'OrderExceededCancellationDeadline' ||
-        String(responseMessage).toLowerCase().includes('already cancelled')
-      )
-    ) {
+      throw new InternalServerErrorException(
+        'Não foi possível consultar os motivos de cancelamento no iFood.',
+      );
+    }
+  }
+
+  async requestCancellation(
+    orderId: string,
+    reason = 'Cancelado no Rappidex.',
+  ) {
+    const reasons = await this.getCancellationReasons(orderId);
+
+    if (!Array.isArray(reasons) || reasons.length === 0) {
       return {
         success: false,
         accepted: false,
         orderId,
-        message: responseMessage || responseCode || 'Cancelamento não aceito pelo iFood.',
+        message: 'Pedido sem políticas de cancelamento ativas no iFood.',
       };
     }
 
-    throw new InternalServerErrorException(
-      'Não foi possível solicitar o cancelamento do pedido ao iFood.',
+    const preferredCode = this.configService.get<string>(
+      'IFOOD_DEFAULT_CANCELLATION_CODE',
     );
-  }
-}
 
-private pickCancellationReason(reasons: any[], preferredCode?: string) {
-  const normalizedReasons = reasons
-    .map((item) => {
-      const rawCode = item?.code ?? item?.cancelCodeId ?? item?.id ?? null;
+        const selectedReason = this.pickCancellationReason(reasons, preferredCode);
 
-      if (!rawCode) {
-        return null;
-      }
+    if (!selectedReason) {
+      return {
+        success: false,
+        accepted: false,
+        orderId,
+        message: 'Nenhum motivo de cancelamento válido foi encontrado.',
+      };
+    }
+
+    const accessToken = await this.ifoodAuthService.getAccessToken();
+
+    try {
+      await axios.post(
+        `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/requestCancellation`,
+        {
+          reason,
+          cancellationCode: selectedReason.rawCode,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+
+      this.logger.warn(
+        `Solicitação de cancelamento enviada ao iFood. OrderId: ${orderId}. Código: ${selectedReason.code}`,
+      );
 
       return {
-        rawCode,
-        code: String(rawCode),
-        description: item?.description ?? item?.reason ?? '',
+        success: true,
+        accepted: true,
+        orderId,
+        cancellationCode: selectedReason.code,
+        message: 'Solicitação de cancelamento enviada ao iFood.',
       };
-    })
-    .filter(Boolean) as Array<{
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const data = error?.response?.data;
+      const responseCode = data?.code || data?.error?.code || '';
+      const responseMessage = data?.message || data?.error?.message || '';
+
+      this.logger.error('Erro ao solicitar cancelamento do pedido no iFood', {
+        status,
+        data,
+        orderId,
+      });
+
+      if (
+        status === 400 &&
+        (responseCode === 'OrderHasACancellationInProgress' ||
+          responseCode === 'OrderExceededCancellationDeadline' ||
+          String(responseMessage).toLowerCase().includes('already cancelled'))
+      ) {
+        return {
+          success: false,
+          accepted: false,
+          orderId,
+          message:
+            responseMessage ||
+            responseCode ||
+            'Cancelamento não aceito pelo iFood.',
+        };
+      }
+
+      throw new InternalServerErrorException(
+        'Não foi possível solicitar o cancelamento do pedido ao iFood.',
+      );
+    }
+  }
+
+  private pickCancellationReason(reasons: any[], preferredCode?: string) {
+    const normalizedReasons = reasons
+      .map((item) => {
+        const rawCode = item?.code ?? item?.cancelCodeId ?? item?.id ?? null;
+
+        if (!rawCode) {
+          return null;
+        }
+
+        return {
+          rawCode,
+          code: String(rawCode),
+          description: item?.description ?? item?.reason ?? '',
+        };
+      })
+      .filter(Boolean) as Array<{
       rawCode: string | number;
       code: string;
       description: string;
     }>;
 
-  if (normalizedReasons.length === 0) {
-    return null;
-  }
-
-  const defaultCode = String(preferredCode || '').trim();
-
-  if (defaultCode) {
-    const foundPreferred = normalizedReasons.find(
-      (item) => item.code === defaultCode,
-    );
-
-    if (foundPreferred) {
-      return foundPreferred;
+    if (normalizedReasons.length === 0) {
+      return null;
     }
+
+    const defaultCode = String(preferredCode || '').trim();
+
+    if (defaultCode) {
+      const foundPreferred = normalizedReasons.find(
+        (item) => item.code === defaultCode,
+      );
+
+      if (foundPreferred) {
+        return foundPreferred;
+      }
+    }
+
+    const found504 = normalizedReasons.find((item) => item.code === '504');
+
+    if (found504) {
+      return found504;
+    }
+
+    return normalizedReasons[0];
   }
 
-  const found504 = normalizedReasons.find((item) => item.code === '504');
-
-  if (found504) {
-    return found504;
-  }
-
-  return normalizedReasons[0];
-}
-
-  async analyzeOrder(orderId: string) {
-    const order = await this.getOrderDetails(orderId);
+  async analyzeOrder(orderId: string, merchantId?: string | null) {
+    const order = await this.getOrderDetails(orderId, merchantId);
 
     const orderType = order?.orderType ?? null;
     const deliveredBy = order?.delivery?.deliveredBy ?? null;
     const orderStatus =
-      order?.orderStatus ??
-      order?.status ??
-      order?.metadata?.status ??
-      null;
+      order?.orderStatus ?? order?.status ?? order?.metadata?.status ?? null;
 
     const isDelivery = orderType === 'DELIVERY';
     const isMerchantDelivery = deliveredBy === 'MERCHANT';
@@ -428,8 +432,8 @@ private pickCancellationReason(reasons: any[], preferredCode?: string) {
     };
   }
 
-  async buildDeliveryPreview(orderId: string) {
-    const deliveryData = await this.buildCreateDeliveryDto(orderId);
+  async buildDeliveryPreview(orderId: string, merchantId?: string | null) {
+    const deliveryData = await this.buildCreateDeliveryDto(orderId, merchantId);
 
     return {
       success: true,
@@ -447,8 +451,11 @@ private pickCancellationReason(reasons: any[], preferredCode?: string) {
     };
   }
 
-  async buildCreateDeliveryDto(orderId: string): Promise<CreateDeliveryDto> {
-    const order = await this.getOrderDetails(orderId);
+  async buildCreateDeliveryDto(
+    orderId: string,
+    merchantId?: string | null,
+  ): Promise<CreateDeliveryDto> {
+    const order = await this.getOrderDetails(orderId, merchantId);
     const establishmentId = await this.resolveTargetShopkeeperId(
       order?.merchant?.id,
     );
@@ -457,7 +464,7 @@ private pickCancellationReason(reasons: any[], preferredCode?: string) {
     const customerPhone = this.normalizePhone(
       order?.customer?.phone?.number ?? '',
     );
-        const displayId = order?.displayId ?? orderId;
+    const displayId = order?.displayId ?? orderId;
     const localizer = order?.customer?.phone?.localizer ?? null;
 
     const totalValue =
@@ -475,7 +482,7 @@ private pickCancellationReason(reasons: any[], preferredCode?: string) {
       .filter(Boolean)
       .join(', ');
 
-        const observation = [
+    const observation = [
       `Pedido iFood #${displayId}`,
       deliveryAddress ? `Endereço: ${deliveryAddress}` : null,
       localizer ? `Localizador: ${localizer}` : null,
@@ -510,7 +517,7 @@ private pickCancellationReason(reasons: any[], preferredCode?: string) {
     if (normalizedMerchantId && merchantMap[normalizedMerchantId]) {
       return merchantMap[normalizedMerchantId];
     }
-    
+
     if (normalizedMerchantId) {
       const mappedUser = await this.userRepository.findOne({
         where: {
@@ -528,9 +535,7 @@ private pickCancellationReason(reasons: any[], preferredCode?: string) {
       }
     }
 
-    return (
-      this.configService.get<string>('IFOOD_TARGET_SHOPKEEPER_ID') ?? null
-    );
+    return this.configService.get<string>('IFOOD_TARGET_SHOPKEEPER_ID') ?? null;
   }
 
   private getMerchantShopkeeperMap(): Record<string, string> {
@@ -573,7 +578,7 @@ private pickCancellationReason(reasons: any[], preferredCode?: string) {
     }
   }
 
-    private async postLogisticsWithoutBody(
+  private async postLogisticsWithoutBody(
     orderId: string,
     endpoint: string,
     actionLabel: string,

@@ -45,7 +45,10 @@ export class UserResult {
   @Expose()
   ifoodMerchantId?: string;
 
- @Expose()
+  @Expose()
+  ifoodClientId?: string;
+
+  @Expose()
   ifoodOrdersReleased: number;
 
   @Expose()

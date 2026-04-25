@@ -66,7 +66,13 @@ export class UserService {
     const city = await this.resolveCity(data.cityId, requester);
     const useIfoodIntegration = Boolean(data.useIfoodIntegration);
     const ifoodMerchantId = useIfoodIntegration
-      ? data.ifoodMerchantId?.trim() ?? ''
+      ? (data.ifoodMerchantId?.trim() ?? '')
+      : '';
+    const ifoodClientId = useIfoodIntegration
+      ? (data.ifoodClientId?.trim() ?? '')
+      : '';
+    const ifoodClientSecret = useIfoodIntegration
+      ? (data.ifoodClientSecret?.trim() ?? '')
       : '';
 
     try {
@@ -78,6 +84,8 @@ export class UserService {
         password: passHash,
         useIfoodIntegration,
         ifoodMerchantId,
+        ifoodClientId,
+        ifoodClientSecret,
         ifoodOrdersReleased: Number(data.ifoodOrdersReleased || 0),
         ifoodOrdersUsed: Number(data.ifoodOrdersUsed || 0),
         ifoodOrdersAvailable: Number(data.ifoodOrdersAvailable || 0),
@@ -185,6 +193,16 @@ export class UserService {
       const ifoodMerchantId = useIfoodIntegration
         ? (data.ifoodMerchantId ?? userToUpdate.ifoodMerchantId ?? '').trim()
         : '';
+      const ifoodClientId = useIfoodIntegration
+        ? (data.ifoodClientId ?? userToUpdate.ifoodClientId ?? '').trim()
+        : '';
+      const ifoodClientSecret = useIfoodIntegration
+        ? (
+            data.ifoodClientSecret ??
+            userToUpdate.ifoodClientSecret ??
+            ''
+          ).trim()
+        : '';
 
       const changedUser = await this.userRepository.save({
         ...userToUpdate,
@@ -192,9 +210,12 @@ export class UserService {
         cityId,
         useIfoodIntegration,
         ifoodMerchantId,
+        ifoodClientId,
+        ifoodClientSecret,
         ifoodOrdersReleased:
           data.ifoodOrdersReleased ?? userToUpdate.ifoodOrdersReleased ?? 0,
-        ifoodOrdersUsed: data.ifoodOrdersUsed ?? userToUpdate.ifoodOrdersUsed ?? 0,
+        ifoodOrdersUsed:
+          data.ifoodOrdersUsed ?? userToUpdate.ifoodOrdersUsed ?? 0,
         ifoodOrdersAvailable:
           data.ifoodOrdersAvailable ?? userToUpdate.ifoodOrdersAvailable ?? 0,
         updatedAt: addHours(new Date(), -3),
