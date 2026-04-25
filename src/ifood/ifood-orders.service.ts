@@ -7,7 +7,6 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
-import axios from 'axios';
 import { CreateDeliveryDto } from '../delivery/dto';
 import { UserEntity } from '../database/entities';
 import {
@@ -15,6 +14,7 @@ import {
   StatusDelivery,
 } from '../shared/constants/enums.constants';
 import { IfoodAuthService } from './ifood-auth.service';
+import { IfoodHttpService } from './ifood-http.service';
 
 @Injectable()
 export class IfoodOrdersService {
@@ -22,6 +22,7 @@ export class IfoodOrdersService {
 
   constructor(
     private readonly ifoodAuthService: IfoodAuthService,
+    private readonly ifoodHttpService: IfoodHttpService,
     private readonly configService: ConfigService,
     @InjectRepository(UserEntity)
     private readonly userRepository: MongoRepository<UserEntity>,
@@ -33,9 +34,11 @@ export class IfoodOrdersService {
     });
 
     try {
-      const response = await axios.get(
-        `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}`,
+      const response = await this.ifoodHttpService.request(
+        'order_details',
         {
+          method: 'GET',
+          url: `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}`,
           headers: {
             Authorization: `Bearer ${accessToken}`,
           },
@@ -65,10 +68,12 @@ export class IfoodOrdersService {
     });
 
     try {
-      await axios.post(
-        `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/dispatch`,
-        {},
+      await this.ifoodHttpService.request(
+        'order_dispatch',
         {
+          method: 'POST',
+          url: `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/dispatch`,
+          data: {},
           headers: {
             Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
@@ -111,14 +116,16 @@ export class IfoodOrdersService {
     });
 
     try {
-      await axios.post(
-        `https://merchant-api.ifood.com.br/logistics/v1.0/orders/${orderId}/assignDriver`,
+      await this.ifoodHttpService.request(
+        'logistics_assign_driver',
         {
-          workerName: motoboy?.name || 'Motoboy Rappidex',
-          workerPhone: this.normalizePhone(motoboy?.phone || ''),
-          workerVehicleType: 'MOTORCYCLE',
-        },
-        {
+          method: 'POST',
+          url: `https://merchant-api.ifood.com.br/logistics/v1.0/orders/${orderId}/assignDriver`,
+          data: {
+            workerName: motoboy?.name || 'Motoboy Rappidex',
+            workerPhone: this.normalizePhone(motoboy?.phone || ''),
+            workerVehicleType: 'MOTORCYCLE',
+          },
           headers: {
             Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
@@ -202,12 +209,14 @@ export class IfoodOrdersService {
     }
 
     try {
-      const response = await axios.post(
-        `https://merchant-api.ifood.com.br/logistics/v1.0/orders/${orderId}/verifyDeliveryCode`,
+      const response = await this.ifoodHttpService.request(
+        'logistics_verify_delivery_code',
         {
-          code: normalizedCode,
-        },
-        {
+          method: 'POST',
+          url: `https://merchant-api.ifood.com.br/logistics/v1.0/orders/${orderId}/verifyDeliveryCode`,
+          data: {
+            code: normalizedCode,
+          },
           headers: {
             Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
@@ -250,9 +259,11 @@ export class IfoodOrdersService {
     });
 
     try {
-      const response = await axios.get(
-        `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/cancellationReasons`,
+      const response = await this.ifoodHttpService.request(
+        'order_cancellation_reasons',
         {
+          method: 'GET',
+          url: `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/cancellationReasons`,
           headers: {
             Authorization: `Bearer ${accessToken}`,
           },
@@ -331,13 +342,15 @@ export class IfoodOrdersService {
     });
 
     try {
-      await axios.post(
-        `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/requestCancellation`,
+      await this.ifoodHttpService.request(
+        'order_request_cancellation',
         {
-          reason,
-          cancellationCode: selectedReason.rawCode,
-        },
-        {
+          method: 'POST',
+          url: `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/requestCancellation`,
+          data: {
+            reason,
+            cancellationCode: selectedReason.rawCode,
+          },
           headers: {
             Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
@@ -391,7 +404,7 @@ export class IfoodOrdersService {
     }
   }
 
-  
+
   private isOrderInTerminalState(status: number | undefined, data: any) {
     if (![400, 404, 409, 410, 422].includes(Number(status))) {
       return false;
@@ -645,10 +658,12 @@ export class IfoodOrdersService {
     });
 
     try {
-      await axios.post(
-        `https://merchant-api.ifood.com.br/logistics/v1.0/orders/${orderId}/${endpoint}`,
-        {},
+      await this.ifoodHttpService.request(
+        `logistics_${endpoint}`,
         {
+          method: 'POST',
+          url: `https://merchant-api.ifood.com.br/logistics/v1.0/orders/${orderId}/${endpoint}`,
+          data: {},
           headers: {
             Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',

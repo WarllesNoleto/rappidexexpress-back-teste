@@ -6,9 +6,9 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
-import axios from 'axios';
 import { UserEntity } from '../database/entities';
 import { AuthContext, IfoodAuthService } from './ifood-auth.service';
+import { IfoodHttpService } from './ifood-http.service';
 
 @Injectable()
 export class IfoodPollingService {
@@ -19,6 +19,7 @@ export class IfoodPollingService {
 
   constructor(
     private readonly ifoodAuthService: IfoodAuthService,
+    private readonly ifoodHttpService: IfoodHttpService,
     private readonly configService: ConfigService,
     @InjectRepository(UserEntity)
     private readonly userRepository: MongoRepository<UserEntity>,
@@ -109,9 +110,11 @@ export class IfoodPollingService {
               );
             }
 
-            const response = await axios.get(
-              'https://merchant-api.ifood.com.br/events/v1.0/events:polling',
+            const response = await this.ifoodHttpService.request(
+              'events_polling',
               {
+                method: 'GET',
+                url: 'https://merchant-api.ifood.com.br/events/v1.0/events:polling',
                 headers: {
                   Authorization: `Bearer ${accessToken}`,
                   'x-polling-merchants': batch.join(','),
@@ -193,14 +196,19 @@ export class IfoodPollingService {
     const accessToken = await this.ifoodAuthService.getAccessToken();
 
     try {
-      await axios.post(
-        'https://merchant-api.ifood.com.br/events/v1.0/events/acknowledgment',
-        eventIds.map((eventId) => ({ id: eventId })),
+      await this.ifoodHttpService.request(
+        'events_acknowledgment',
         {
+          method: 'POST',
+          url: 'https://merchant-api.ifood.com.br/events/v1.0/events/acknowledgment',
+          data: eventIds.map((eventId) => ({ id: eventId })),
           headers: {
             Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
           },
+        },
+        {
+          maxAttempts: 4,
         },
       );
 

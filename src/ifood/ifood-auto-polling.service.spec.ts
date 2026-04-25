@@ -172,4 +172,31 @@ describe('IfoodAutoPollingService', () => {
       }),
     );
   });
+
+  it('deve aplicar fallback de ACK por lotes quando deadline for excedido', async () => {
+    const { service, ifoodPollingService } = buildService({
+      config: {
+        IFOOD_ACK_DEADLINE_MS: 5,
+      },
+      pollingResult: {
+        events: [{ id: 'evt-timeout', orderId: 'o-timeout', code: 'CON' }],
+        metadata: {
+          maxMerchantsPerBatch: 1,
+        },
+      },
+    });
+
+    ifoodPollingService.acknowledgeEvents
+      .mockImplementationOnce(() => new Promise(() => undefined))
+      .mockResolvedValueOnce(undefined);
+
+    await (service as any).runPollingCycle();
+
+    expect(ifoodPollingService.acknowledgeEvents).toHaveBeenNthCalledWith(1, [
+      'evt-timeout',
+    ]);
+    expect(ifoodPollingService.acknowledgeEvents).toHaveBeenNthCalledWith(2, [
+      'evt-timeout',
+    ]);
+  });
 });

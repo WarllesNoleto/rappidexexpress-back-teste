@@ -6,9 +6,9 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import axios from 'axios';
 import { MongoRepository } from 'typeorm';
 import { UserEntity } from '../database/entities';
+import { IfoodHttpService } from './ifood-http.service';
 
 type AuthProfile = {
   clientId: string;
@@ -38,6 +38,7 @@ export class IfoodAuthService {
 
   constructor(
     private readonly configService: ConfigService,
+    private readonly ifoodHttpService: IfoodHttpService,
     @InjectRepository(UserEntity)
     private readonly userRepository: MongoRepository<UserEntity>,
   ) {}
@@ -73,13 +74,18 @@ export class IfoodAuthService {
     }).toString();
 
     try {
-      const response = await axios.post(
-        'https://merchant-api.ifood.com.br/authentication/v1.0/oauth/token',
-        body,
+      const response = await this.ifoodHttpService.request(
+        'auth_token',
         {
+          method: 'POST',
+          url: 'https://merchant-api.ifood.com.br/authentication/v1.0/oauth/token',
+          data: body,
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
           },
+        },
+        {
+          retryOnStatuses: [429, 500, 502, 503, 504],
         },
       );
 

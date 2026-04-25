@@ -18,6 +18,8 @@ export class IfoodAutoPollingService
 {
   private static readonly DEFAULT_INTERVAL_MS = 30000;
   private static readonly MAX_PRODUCTION_INTERVAL_MS = 30000;
+  private static readonly DEFAULT_ACK_DEADLINE_MS = 1500;
+  private static readonly ACK_FALLBACK_BATCH_SIZE = 50;
   private readonly logger = new Logger(IfoodAutoPollingService.name);
   private intervalRef: NodeJS.Timeout | null = null;
   private lastCycleStartedAt: number | null = null;
@@ -131,6 +133,31 @@ export class IfoodAutoPollingService
         `Eventos pendentes de ACK neste ciclo: ${pendingAckEvents.length}`,
       );
 
+      const localPendingAckEventIds =
+        await this.ifoodEventService.findUnacknowledgedEventIds();
+      const ackEvents = [...freshEvents, ...pendingAckEvents];
+
+      const eventIds = [
+        ...new Set(ackEvents.map((event) => event?.id).filter(Boolean)),
+        ...localPendingAckEventIds,
+      ];
+
+      if (eventIds.length === 0) {
+        return;
+      }
+
+      await this.ackWithDeadlineAndFallback(eventIds);
+      this.metrics.eventsAcked += eventIds.length;
+      this.metrics.pollingToAckMs.push(Date.now() - cycleStartedAt);
+
+      for (const eventId of eventIds) {
+        await this.ifoodEventService.markAsAcknowledged(eventId);
+      }
+
+      this.logger.log(
+        `ACK enviado ao iFood e confirmado localmente: ${eventIds.length}`,
+      );
+
       const cancellationEvents = freshEvents.filter(
         (event) =>
           event?.code === 'CAN' ||
@@ -166,31 +193,6 @@ export class IfoodAutoPollingService
         }
       }
 
-      const localPendingAckEventIds =
-        await this.ifoodEventService.findUnacknowledgedEventIds();
-      const ackEvents = [...freshEvents, ...pendingAckEvents];
-
-      const eventIds = [
-        ...new Set(ackEvents.map((event) => event?.id).filter(Boolean)),
-        ...localPendingAckEventIds,
-      ];
-
-      if (eventIds.length === 0) {
-        return;
-      }
-
-      await this.ifoodPollingService.acknowledgeEvents(eventIds);
-      this.metrics.eventsAcked += eventIds.length;
-      this.metrics.pollingToAckMs.push(Date.now() - cycleStartedAt);
-
-      for (const eventId of eventIds) {
-        await this.ifoodEventService.markAsAcknowledged(eventId);
-      }
-
-      this.logger.log(
-        `ACK enviado ao iFood e confirmado localmente: ${eventIds.length}`,
-      );
-      
       this.logObservabilitySnapshot();
     } catch (error: any) {
       this.captureHttpErrorMetrics(error);
@@ -239,6 +241,55 @@ export class IfoodAutoPollingService
     if (status === 400) {
       this.metrics.errors400 += 1;
     }
+  }
+
+  private async ackWithDeadlineAndFallback(eventIds: string[]) {
+    const ackDeadlineMs = this.resolveAckDeadlineMs();
+    try {
+      await Promise.race([
+        this.ifoodPollingService.acknowledgeEvents(eventIds),
+        this.timeoutAfter(ackDeadlineMs),
+      ]);
+    } catch (error: any) {
+      if (error?.message !== 'ACK_DEADLINE_EXCEEDED') {
+        throw error;
+      }
+
+      this.logger.error(
+        `ACK excedeu o deadline de ${ackDeadlineMs}ms. Acionando fallback por lotes.`,
+      );
+
+      await this.ackInFallbackBatches(eventIds);
+    }
+  }
+
+  private async ackInFallbackBatches(eventIds: string[]) {
+    const uniqueIds = Array.from(new Set(eventIds.filter(Boolean)));
+    for (
+      let index = 0;
+      index < uniqueIds.length;
+      index += IfoodAutoPollingService.ACK_FALLBACK_BATCH_SIZE
+    ) {
+      const chunk = uniqueIds.slice(
+        index,
+        index + IfoodAutoPollingService.ACK_FALLBACK_BATCH_SIZE,
+      );
+      await this.ifoodPollingService.acknowledgeEvents(chunk);
+    }
+  }
+
+  private resolveAckDeadlineMs() {
+    const raw = Number(this.configService.get('IFOOD_ACK_DEADLINE_MS'));
+    if (Number.isFinite(raw) && raw > 0) {
+      return raw;
+    }
+    return IfoodAutoPollingService.DEFAULT_ACK_DEADLINE_MS;
+  }
+
+  private async timeoutAfter(ms: number) {
+    return new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('ACK_DEADLINE_EXCEEDED')), ms);
+    });
   }
 
   private logObservabilitySnapshot() {
