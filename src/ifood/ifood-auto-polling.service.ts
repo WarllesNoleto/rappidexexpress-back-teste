@@ -89,6 +89,9 @@ export class IfoodAutoPollingService
         await this.ifoodPollingService.pollEventsWithMetadata();
       const allEvents = Array.isArray(events) ? events : [];
       this.metrics.eventsReceived += allEvents.length;
+      const polledEventIds = Array.from(
+        new Set(allEvents.map((event) => event?.id).filter(Boolean)),
+      );
 
       this.logger.log(
         `Polling executado com sucesso. Eventos encontrados: ${allEvents.length}`,
@@ -133,29 +136,33 @@ export class IfoodAutoPollingService
         `Eventos pendentes de ACK neste ciclo: ${pendingAckEvents.length}`,
       );
 
-      const localPendingAckEventIds =
-        await this.ifoodEventService.findUnacknowledgedEventIds();
-      const ackEvents = [...freshEvents, ...pendingAckEvents];
+      if (polledEventIds.length > 0) {
+        await this.ackWithDeadlineAndFallback(polledEventIds);
+        this.metrics.eventsAcked += polledEventIds.length;
+        this.metrics.pollingToAckMs.push(Date.now() - cycleStartedAt);
 
-      const eventIds = [
-        ...new Set(ackEvents.map((event) => event?.id).filter(Boolean)),
-        ...localPendingAckEventIds,
-      ];
-
-      if (eventIds.length === 0) {
-        return;
+        for (const eventId of polledEventIds) {
+          await this.ifoodEventService.markAsAcknowledged(eventId);
+        }
       }
 
-      await this.ackWithDeadlineAndFallback(eventIds);
-      this.metrics.eventsAcked += eventIds.length;
-      this.metrics.pollingToAckMs.push(Date.now() - cycleStartedAt);
+      const localPendingAckEventIds =
+        await this.ifoodEventService.findUnacknowledgedEventIds();
+      const pendingRetryIds = localPendingAckEventIds.filter(
+        (eventId) => !polledEventIds.includes(eventId),
+      );
 
-      for (const eventId of eventIds) {
-        await this.ifoodEventService.markAsAcknowledged(eventId);
+      if (pendingRetryIds.length > 0) {
+        await this.ackWithDeadlineAndFallback(pendingRetryIds);
+        this.metrics.eventsAcked += pendingRetryIds.length;
+
+        for (const eventId of pendingRetryIds) {
+          await this.ifoodEventService.markAsAcknowledged(eventId);
+        }
       }
 
       this.logger.log(
-        `ACK enviado ao iFood e confirmado localmente: ${eventIds.length}`,
+        `ACK enviado ao iFood e confirmado localmente: ${polledEventIds.length + pendingRetryIds.length}`,
       );
 
       const cancellationEvents = freshEvents.filter(

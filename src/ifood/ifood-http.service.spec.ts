@@ -61,4 +61,29 @@ describe('IfoodHttpService', () => {
     expect(mockedAxios.request).toHaveBeenCalledTimes(2);
     expect(sleepSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('deve aplicar controle de rate limit por endpoint a cada tentativa', async () => {
+    const service = buildService({ IFOOD_HTTP_MAX_ATTEMPTS: 2 });
+
+    mockedAxios.request
+      .mockRejectedValueOnce({ response: { status: 429 } } as any)
+      .mockResolvedValueOnce({ data: { ok: true }, status: 200 } as any);
+
+    const rateLimitSpy = jest
+      .spyOn(service as any, 'waitForEndpointRateLimit')
+      .mockResolvedValue(undefined as never);
+    const sleepSpy = jest
+      .spyOn(service as any, 'sleep')
+      .mockResolvedValue(undefined as never);
+
+    await service.request('events_polling', {
+      method: 'GET',
+      url: 'https://merchant-api.ifood.com.br/events/v1.0/events:polling',
+    });
+
+    expect(rateLimitSpy).toHaveBeenCalledTimes(2);
+    expect(rateLimitSpy).toHaveBeenNthCalledWith(1, 'events_polling');
+    expect(rateLimitSpy).toHaveBeenNthCalledWith(2, 'events_polling');
+    expect(sleepSpy).toHaveBeenCalledTimes(1);
+  });
 });

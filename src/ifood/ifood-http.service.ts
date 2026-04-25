@@ -20,6 +20,8 @@ type EndpointMetrics = {
 export class IfoodHttpService {
   private readonly logger = new Logger(IfoodHttpService.name);
   private readonly metricsByEndpoint: Record<string, EndpointMetrics> = {};
+  private readonly endpointRateLimitQueues: Record<string, Promise<void>> = {};
+  private readonly endpointLastRequestAt: Record<string, number> = {};
   private static readonly DEFAULT_MAX_ATTEMPTS = 3;
   private static readonly DEFAULT_BASE_DELAY_MS = 200;
   private static readonly DEFAULT_TIMEOUT_MS = 10000;
@@ -45,6 +47,8 @@ export class IfoodHttpService {
     while (attempts < maxAttempts) {
       attempts += 1;
       try {
+        await this.waitForEndpointRateLimit(endpoint);
+
         const response = await axios.request<T>({
           timeout: timeoutMs,
           ...config,
@@ -117,6 +121,56 @@ export class IfoodHttpService {
     }
 
     return IfoodHttpService.DEFAULT_TIMEOUT_MS;
+  }
+
+  private resolveMinIntervalMs(endpoint: string) {
+    const endpointKey = endpoint.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+    const specificRaw = Number(
+      this.configService.get(`IFOOD_HTTP_MIN_INTERVAL_MS_${endpointKey}`),
+    );
+    const defaultRaw = Number(
+      this.configService.get('IFOOD_HTTP_MIN_INTERVAL_MS'),
+    );
+
+    if (Number.isFinite(specificRaw) && specificRaw >= 0) {
+      return specificRaw;
+    }
+
+    if (Number.isFinite(defaultRaw) && defaultRaw >= 0) {
+      return defaultRaw;
+    }
+
+    return 0;
+  }
+
+  private async waitForEndpointRateLimit(endpoint: string) {
+    const minIntervalMs = this.resolveMinIntervalMs(endpoint);
+
+    if (minIntervalMs <= 0) {
+      return;
+    }
+
+    const previous = this.endpointRateLimitQueues[endpoint] ?? Promise.resolve();
+    let release: () => void = () => undefined;
+    this.endpointRateLimitQueues[endpoint] = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    await previous;
+
+    try {
+      const now = Date.now();
+      const lastRequestAt = this.endpointLastRequestAt[endpoint] ?? 0;
+      const waitMs = Math.max(0, minIntervalMs - (now - lastRequestAt));
+
+      if (waitMs > 0) {
+        await this.sleep(waitMs);
+      }
+
+      this.endpointLastRequestAt[endpoint] = Date.now();
+    } finally {
+      release();
+    }
   }
 
   private computeBackoffWithJitter(baseDelayMs: number, attempt: number) {

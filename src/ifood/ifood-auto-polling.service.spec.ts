@@ -84,7 +84,7 @@ describe('IfoodAutoPollingService', () => {
     clearIntervalSpy.mockRestore();
   });
 
-  it('deve deduplicar ACK e incluir eventos locais pendentes para retry', async () => {
+  it('deve enviar ACK imediato dos eventos do polling e depois reenviar pendências locais', async () => {
     const pollingEvents = [
       { id: 'evt-1', orderId: 'o-1', code: 'CON' },
       { id: 'evt-1', orderId: 'o-1', code: 'CON' },
@@ -101,9 +101,32 @@ describe('IfoodAutoPollingService', () => {
 
     await (service as any).runPollingCycle();
 
+    expect(ifoodPollingService.acknowledgeEvents).toHaveBeenNthCalledWith(1, [
+      'evt-1',
+    ]);
+    expect(ifoodPollingService.acknowledgeEvents).toHaveBeenNthCalledWith(2, [
+      'evt-2',
+    ]);
+  });
+
+  it('deve deduplicar eventos no ACK imediato do polling', async () => {
+    const pollingEvents = [
+      { id: 'evt-1', orderId: 'o-1', code: 'CON' },
+      { id: 'evt-1', orderId: 'o-1', code: 'CON' },
+    ];
+    const { service, ifoodPollingService } = buildService({
+      pollingResult: {
+        events: pollingEvents,
+        metadata: {
+          maxMerchantsPerBatch: 2,
+        },
+      },
+    });
+
+    await (service as any).runPollingCycle();
+
     expect(ifoodPollingService.acknowledgeEvents).toHaveBeenCalledWith([
       'evt-1',
-      'evt-2',
     ]);
   });
 
@@ -120,9 +143,9 @@ describe('IfoodAutoPollingService', () => {
     ifoodPollingService.acknowledgeEvents
       .mockRejectedValueOnce({ ifoodStatus: 429, message: 'rate limited' })
       .mockResolvedValueOnce(undefined);
-    ifoodEventService.findUnacknowledgedEventIds
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce(['evt-retry']);
+    ifoodEventService.findUnacknowledgedEventIds.mockResolvedValueOnce([
+      'evt-retry',
+    ]);
     ifoodPollingService.pollEventsWithMetadata
       .mockResolvedValueOnce({
         events: [{ id: 'evt-retry', orderId: 'o-2', code: 'CON' }],
