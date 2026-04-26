@@ -105,10 +105,10 @@ describe('IfoodAutoPollingService', () => {
     await (service as any).runPollingCycle();
 
     expect(ifoodPollingService.acknowledgeEvents).toHaveBeenNthCalledWith(1, [
-      { id: 'evt-2', merchantId: 'm-2' },
+      { id: 'evt-1', merchantId: '' },
     ]);
     expect(ifoodPollingService.acknowledgeEvents).toHaveBeenNthCalledWith(2, [
-      'evt-2',
+      { id: 'evt-2', merchantId: 'm-2' },
     ]);
   });
 
