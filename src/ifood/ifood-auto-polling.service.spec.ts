@@ -199,6 +199,42 @@ describe('IfoodAutoPollingService', () => {
     );
   });
 
+  it('não deve alertar quando intervalo efetivo estiver dentro da tolerância de 2000ms', async () => {
+    const { service } = buildService();
+    const loggerErrorSpy = jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation(() => undefined);
+    (service as any).lastCycleStartedAt = 1000;
+    const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(32000);
+
+    await (service as any).runPollingCycle();
+
+    expect(loggerErrorSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('intervalo efetivo de polling acima do limite'),
+    );
+
+    loggerErrorSpy.mockRestore();
+    dateNowSpy.mockRestore();
+  });
+
+  it('deve alertar quando intervalo efetivo ultrapassar tolerância de 2000ms', async () => {
+    const { service } = buildService();
+    const loggerErrorSpy = jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation(() => undefined);
+    (service as any).lastCycleStartedAt = 1000;
+    const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(33001);
+
+    await (service as any).runPollingCycle();
+
+    expect(loggerErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('(32001ms > 32000ms)'),
+    );
+
+    loggerErrorSpy.mockRestore();
+    dateNowSpy.mockRestore();
+  });
+
   it('deve aplicar fallback de ACK por lotes quando deadline for excedido', async () => {
     const { service, ifoodPollingService } = buildService({
       config: {

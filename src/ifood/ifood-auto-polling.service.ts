@@ -18,6 +18,7 @@ export class IfoodAutoPollingService
 {
   private static readonly DEFAULT_INTERVAL_MS = 30000;
   private static readonly MAX_PRODUCTION_INTERVAL_MS = 30000;
+  private static readonly POLLING_INTERVAL_TOLERANCE_MS = 2000;
   private static readonly DEFAULT_ACK_DEADLINE_MS = 1500;
   private static readonly ACK_FALLBACK_BATCH_SIZE = 50;
   private readonly logger = new Logger(IfoodAutoPollingService.name);
@@ -75,9 +76,12 @@ export class IfoodAutoPollingService
 
     if (this.lastCycleStartedAt) {
       const effectiveIntervalMs = cycleStartedAt - this.lastCycleStartedAt;
-      if (effectiveIntervalMs > IfoodAutoPollingService.MAX_PRODUCTION_INTERVAL_MS) {
+      const maxAllowedEffectiveIntervalMs =
+        IfoodAutoPollingService.MAX_PRODUCTION_INTERVAL_MS +
+        IfoodAutoPollingService.POLLING_INTERVAL_TOLERANCE_MS;
+      if (effectiveIntervalMs > maxAllowedEffectiveIntervalMs) {
         this.logger.error(
-          `ALERTA: intervalo efetivo de polling acima do limite (${effectiveIntervalMs}ms > ${IfoodAutoPollingService.MAX_PRODUCTION_INTERVAL_MS}ms).`,
+          `ALERTA: intervalo efetivo de polling acima do limite (${effectiveIntervalMs}ms > ${maxAllowedEffectiveIntervalMs}ms).`,
         );
       }
     }
