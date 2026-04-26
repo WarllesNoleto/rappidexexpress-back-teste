@@ -84,6 +84,12 @@ export class IfoodEventService {
   }
 
   async findUnacknowledgedEventIds(limit = 500) {
+    const events = await this.findUnacknowledgedEvents(limit);
+
+    return events.map((event) => event.eventId);
+  }
+
+  async findUnacknowledgedEvents(limit = 500) {
     const events = await this.ifoodEventRepository.find({
       where: {
         acknowledged: false,
@@ -91,11 +97,15 @@ export class IfoodEventService {
       take: limit,
       select: {
         eventId: true,
+        merchantId: true,
       } as any,
     });
 
     return (Array.isArray(events) ? events : [])
-      .map((event) => String(event?.eventId || '').trim())
-      .filter(Boolean);
+      .map((event) => ({
+        eventId: String(event?.eventId || '').trim(),
+        merchantId: String((event as any)?.merchantId || '').trim(),
+      }))
+      .filter((event) => Boolean(event.eventId));
   }
 }

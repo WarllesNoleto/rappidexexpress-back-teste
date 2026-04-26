@@ -188,32 +188,64 @@ export class IfoodPollingService {
     });
   }
 
-  async acknowledgeEvents(eventIds: string[]) {
+  async acknowledgeEvents(eventIds: Array<string | { id: string; merchantId?: string }>) {
     if (!Array.isArray(eventIds) || eventIds.length === 0) {
       return;
     }
 
-    const accessToken = await this.ifoodAuthService.getAccessToken();
+    const normalizedEvents = Array.from(
+      new Map(
+        eventIds
+          .map((event) => {
+            if (typeof event === 'string') {
+              return {
+                id: String(event || '').trim(),
+                merchantId: '',
+              };
+            }
+
+            return {
+              id: String((event as any)?.id || '').trim(),
+              merchantId: String((event as any)?.merchantId || '').trim(),
+            };
+          })
+          .filter((event) => Boolean(event.id))
+          .map((event) => [event.id, event]),
+      ).values(),
+    );
+
+    if (normalizedEvents.length === 0) {
+      return;
+    }
+
+    const ackGroups = await this.groupEventsByAuthContext(normalizedEvents);
 
     try {
-      await this.ifoodHttpService.request(
-        'events_acknowledgment',
-        {
-          method: 'POST',
-          url: 'https://merchant-api.ifood.com.br/events/v1.0/events/acknowledgment',
-          data: eventIds.map((eventId) => ({ id: eventId })),
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
+      for (const ackGroup of ackGroups) {
+        const accessToken = await this.ifoodAuthService.getAccessToken({
+          merchantId: ackGroup.authContext.merchantId,
+          profileKey: ackGroup.authContext.profileKey,
+        });
+
+        await this.ifoodHttpService.request(
+          'events_acknowledgment',
+          {
+            method: 'POST',
+            url: 'https://merchant-api.ifood.com.br/events/v1.0/events/acknowledgment',
+            data: ackGroup.events.map((event) => ({ id: event.id })),
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
           },
-        },
-        {
-          maxAttempts: 4,
-        },
-      );
+          {
+            maxAttempts: 4,
+          },
+        );
+      }
 
       this.logger.log(
-        `ACK enviado ao iFood com sucesso. Eventos: ${eventIds.length}`,
+        `ACK enviado ao iFood com sucesso. Eventos: ${normalizedEvents.length}. Perfis: ${ackGroups.length}`,
       );
     } catch (error: any) {
       const status = error?.response?.status;
@@ -229,6 +261,35 @@ export class IfoodPollingService {
         'Não foi possível enviar ACK dos eventos ao iFood.',
       );
     }
+  }
+
+  private async groupEventsByAuthContext(
+    events: Array<{ id: string; merchantId?: string }>,
+  ) {
+    const groups: Record<
+      string,
+      {
+        authContext: AuthContext;
+        events: Array<{ id: string; merchantId?: string }>;
+      }
+    > = {};
+
+    for (const event of events) {
+      const authContext = await this.ifoodAuthService.resolveAuthContext({
+        merchantId: event.merchantId,
+      });
+
+      if (!groups[authContext.cacheKey]) {
+        groups[authContext.cacheKey] = {
+          authContext,
+          events: [],
+        };
+      }
+
+      groups[authContext.cacheKey].events.push(event);
+    }
+
+    return Object.values(groups);
   }
 
   private async resolvePollingMerchants(): Promise<string[]> {

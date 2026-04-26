@@ -31,6 +31,7 @@ describe('IfoodAutoPollingService', () => {
       findByEventId: jest.fn().mockResolvedValue(null),
       markAsProcessed: jest.fn().mockResolvedValue(undefined),
       markAsAcknowledged: jest.fn().mockResolvedValue(undefined),
+      findUnacknowledgedEvents: jest.fn().mockResolvedValue([]),
       findUnacknowledgedEventIds: jest.fn().mockResolvedValue([]),
     } as any;
     const deliveryService = {
@@ -97,12 +98,14 @@ describe('IfoodAutoPollingService', () => {
         },
       },
     });
-    ifoodEventService.findUnacknowledgedEventIds.mockResolvedValue(['evt-2']);
+    ifoodEventService.findUnacknowledgedEvents.mockResolvedValue([
+      { eventId: 'evt-2', merchantId: 'm-2' },
+    ]);
 
     await (service as any).runPollingCycle();
 
     expect(ifoodPollingService.acknowledgeEvents).toHaveBeenNthCalledWith(1, [
-      'evt-1',
+      { id: 'evt-2', merchantId: 'm-2' },
     ]);
     expect(ifoodPollingService.acknowledgeEvents).toHaveBeenNthCalledWith(2, [
       'evt-2',
@@ -126,7 +129,7 @@ describe('IfoodAutoPollingService', () => {
     await (service as any).runPollingCycle();
 
     expect(ifoodPollingService.acknowledgeEvents).toHaveBeenCalledWith([
-      'evt-1',
+      { id: 'evt-1', merchantId: '' },
     ]);
   });
 
@@ -143,8 +146,8 @@ describe('IfoodAutoPollingService', () => {
     ifoodPollingService.acknowledgeEvents
       .mockRejectedValueOnce({ ifoodStatus: 429, message: 'rate limited' })
       .mockResolvedValueOnce(undefined);
-    ifoodEventService.findUnacknowledgedEventIds.mockResolvedValueOnce([
-      'evt-retry',
+    ifoodEventService.findUnacknowledgedEvents.mockResolvedValueOnce([
+      { eventId: 'evt-retry', merchantId: '' },
     ]);
     ifoodPollingService.pollEventsWithMetadata
       .mockResolvedValueOnce({
@@ -160,10 +163,10 @@ describe('IfoodAutoPollingService', () => {
     await (service as any).runPollingCycle();
 
     expect(ifoodPollingService.acknowledgeEvents).toHaveBeenNthCalledWith(1, [
-      'evt-retry',
+      { id: 'evt-retry', merchantId: '' },
     ]);
     expect(ifoodPollingService.acknowledgeEvents).toHaveBeenNthCalledWith(2, [
-      'evt-retry',
+      { id: 'evt-retry', merchantId: '' },
     ]);
   });
 
@@ -216,10 +219,10 @@ describe('IfoodAutoPollingService', () => {
     await (service as any).runPollingCycle();
 
     expect(ifoodPollingService.acknowledgeEvents).toHaveBeenNthCalledWith(1, [
-      'evt-timeout',
+      { id: 'evt-timeout', merchantId: '' },
     ]);
     expect(ifoodPollingService.acknowledgeEvents).toHaveBeenNthCalledWith(2, [
-      'evt-timeout',
+      { id: 'evt-timeout', merchantId: '' },
     ]);
   });
 });

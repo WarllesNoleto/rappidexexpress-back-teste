@@ -89,9 +89,18 @@ export class IfoodAutoPollingService
         await this.ifoodPollingService.pollEventsWithMetadata();
       const allEvents = Array.isArray(events) ? events : [];
       this.metrics.eventsReceived += allEvents.length;
-      const polledEventIds = Array.from(
-        new Set(allEvents.map((event) => event?.id).filter(Boolean)),
+      const polledAckTargets = Array.from(
+        new Map(
+          allEvents
+            .map((event) => ({
+              id: String(event?.id || '').trim(),
+              merchantId: String(event?.merchantId || '').trim(),
+            }))
+            .filter((event) => Boolean(event.id))
+            .map((event) => [event.id, event]),
+        ).values(),
       );
+      const polledEventIds = polledAckTargets.map((event) => event.id);
 
       this.logger.log(
         `Polling executado com sucesso. Eventos encontrados: ${allEvents.length}`,
@@ -136,8 +145,8 @@ export class IfoodAutoPollingService
         `Eventos pendentes de ACK neste ciclo: ${pendingAckEvents.length}`,
       );
 
-      if (polledEventIds.length > 0) {
-        await this.ackWithDeadlineAndFallback(polledEventIds);
+      if (polledAckTargets.length > 0) {
+        await this.ackWithDeadlineAndFallback(polledAckTargets);
         this.metrics.eventsAcked += polledEventIds.length;
         this.metrics.pollingToAckMs.push(Date.now() - cycleStartedAt);
 
@@ -146,15 +155,19 @@ export class IfoodAutoPollingService
         }
       }
 
-      const localPendingAckEventIds =
-        await this.ifoodEventService.findUnacknowledgedEventIds();
-      const pendingRetryIds = localPendingAckEventIds.filter(
-        (eventId) => !polledEventIds.includes(eventId),
-      );
+      const localPendingAckEvents =
+        await this.ifoodEventService.findUnacknowledgedEvents();
+      const pendingRetryAckTargets = localPendingAckEvents
+        .filter((event) => !polledEventIds.includes(event.eventId))
+        .map((event) => ({
+          id: event.eventId,
+          merchantId: event.merchantId,
+        }));
+      const pendingRetryIds = pendingRetryAckTargets.map((event) => event.id);
 
-      if (pendingRetryIds.length > 0) {
-        await this.ackWithDeadlineAndFallback(pendingRetryIds);
-        this.metrics.eventsAcked += pendingRetryIds.length;
+      if (pendingRetryAckTargets.length > 0) {
+        await this.ackWithDeadlineAndFallback(pendingRetryAckTargets);
+        this.metrics.eventsAcked += pendingRetryAckTargets.length;
 
         for (const eventId of pendingRetryIds) {
           await this.ifoodEventService.markAsAcknowledged(eventId);
@@ -196,7 +209,7 @@ export class IfoodAutoPollingService
         await this.ifoodImportService.importFromEvents(freshEvents);
 
         for (const event of freshEvents) {
-          await this.ifoodEventService.markAsProcessed(event);
+          await this.ifoodEventService.markAsProcessed(event, true);
         }
       }
 
@@ -250,11 +263,29 @@ export class IfoodAutoPollingService
     }
   }
 
-  private async ackWithDeadlineAndFallback(eventIds: string[]) {
+  private async ackWithDeadlineAndFallback(
+    events: Array<{ id: string; merchantId?: string }>,
+  ) {
+    const normalizedEvents = Array.from(
+      new Map(
+        events
+          .map((event) => ({
+            id: String(event?.id || '').trim(),
+            merchantId: String(event?.merchantId || '').trim(),
+          }))
+          .filter((event) => Boolean(event.id))
+          .map((event) => [event.id, event]),
+      ).values(),
+    );
+
+    if (normalizedEvents.length === 0) {
+      return;
+    }
+
     const ackDeadlineMs = this.resolveAckDeadlineMs();
     try {
       await Promise.race([
-        this.ifoodPollingService.acknowledgeEvents(eventIds),
+        this.ifoodPollingService.acknowledgeEvents(normalizedEvents),
         this.timeoutAfter(ackDeadlineMs),
       ]);
     } catch (error: any) {
@@ -266,18 +297,19 @@ export class IfoodAutoPollingService
         `ACK excedeu o deadline de ${ackDeadlineMs}ms. Acionando fallback por lotes.`,
       );
 
-      await this.ackInFallbackBatches(eventIds);
+      await this.ackInFallbackBatches(normalizedEvents);
     }
   }
 
-  private async ackInFallbackBatches(eventIds: string[]) {
-    const uniqueIds = Array.from(new Set(eventIds.filter(Boolean)));
+  private async ackInFallbackBatches(
+    events: Array<{ id: string; merchantId?: string }>,
+  ) {
     for (
       let index = 0;
-      index < uniqueIds.length;
+      index < events.length;
       index += IfoodAutoPollingService.ACK_FALLBACK_BATCH_SIZE
     ) {
-      const chunk = uniqueIds.slice(
+      const chunk = events.slice(
         index,
         index + IfoodAutoPollingService.ACK_FALLBACK_BATCH_SIZE,
       );
