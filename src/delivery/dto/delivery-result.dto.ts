@@ -67,6 +67,9 @@ export class DeliveryResult {
   collectedAt: Date;
 
   @Expose()
+  arrivedAtDestinationAt?: Date;
+
+  @Expose()
   finishedAt: Date;
 
   @Expose()
@@ -110,6 +113,7 @@ export class DeliveryResult {
           : null,
         onCoursedAt: delivery.onCoursedAt,
         collectedAt: delivery.collectedAt,
+        arrivedAtDestinationAt: (delivery as any).arrivedAtDestinationAt,
         finishedAt: delivery.finishedAt,
         motoboyId: delivery.motoboy ? delivery.motoboy.id : null,
         motoboyName: delivery.motoboy ? delivery.motoboy.name : null,

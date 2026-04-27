@@ -60,6 +60,24 @@ export class DeliveryEntity {
   @Column()
   collectedAt: Date;
 
+  @Column({ nullable: true })
+  arrivedAtDestinationAt?: Date;
+
   @Column()
   finishedAt: Date;
+
+  @Column({ default: false })
+  ifoodAssignDriverSynced?: boolean;
+
+  @Column({ default: false })
+  ifoodGoingToOriginSynced?: boolean;
+
+  @Column({ default: false })
+  ifoodArrivedAtOriginSynced?: boolean;
+
+  @Column({ default: false })
+  ifoodDispatchSynced?: boolean;
+
+  @Column({ default: false })
+  ifoodArrivedAtDestinationSynced?: boolean;
 }

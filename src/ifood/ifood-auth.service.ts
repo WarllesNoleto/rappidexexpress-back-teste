@@ -5,9 +5,6 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
-import { MongoRepository } from 'typeorm';
-import { UserEntity } from '../database/entities';
 import { IfoodHttpService } from './ifood-http.service';
 
 type AuthProfile = {
@@ -18,7 +15,7 @@ type AuthProfile = {
 export type AuthContext = {
   cacheKey: string;
   credentials: AuthProfile;
-  source: 'merchant' | 'profile' | 'legacy';
+  source: 'profile' | 'legacy';
   profileKey?: string;
   merchantId?: string;
 };
@@ -39,8 +36,6 @@ export class IfoodAuthService {
   constructor(
     private readonly configService: ConfigService,
     private readonly ifoodHttpService: IfoodHttpService,
-    @InjectRepository(UserEntity)
-    private readonly userRepository: MongoRepository<UserEntity>,
   ) {}
 
   async getAccessToken(options?: {
@@ -131,20 +126,6 @@ export class IfoodAuthService {
   }): Promise<AuthContext> {
     const normalizedMerchantId = String(options?.merchantId || '').trim();
 
-    if (normalizedMerchantId) {
-      const merchantCredentials =
-        await this.findMerchantCredentials(normalizedMerchantId);
-
-      if (merchantCredentials) {
-        return {
-          cacheKey: `merchant:${normalizedMerchantId}`,
-          credentials: merchantCredentials,
-          source: 'merchant',
-          merchantId: normalizedMerchantId,
-        };
-      }
-    }
-
     const profileKey = this.resolveProfileKey(
       options?.profileKey,
       normalizedMerchantId,
@@ -181,7 +162,7 @@ export class IfoodAuthService {
     }
 
     throw new BadRequestException(
-      `Credenciais do iFood não encontradas para o merchant ${normalizedMerchantId || '(não informado)'} e perfil ${profileKey}. Configure credenciais no cadastro da empresa, IFOOD_AUTH_PROFILES ou IFOOD_CLIENT_ID/IFOOD_CLIENT_SECRET.`,
+      `Credenciais do iFood não encontradas para o merchant ${normalizedMerchantId || '(não informado)'} e perfil ${profileKey}. Configure IFOOD_AUTH_PROFILES ou IFOOD_CLIENT_ID/IFOOD_CLIENT_SECRET.`,
     );
   }
 
@@ -203,33 +184,6 @@ export class IfoodAuthService {
     }
 
     return IfoodAuthService.DEFAULT_PROFILE_KEY;
-  }
-
-  private async findMerchantCredentials(
-    merchantId: string,
-  ): Promise<AuthProfile | null> {
-    const mappedUser = await this.userRepository.findOne({
-      where: {
-        useIfoodIntegration: true,
-        ifoodMerchantId: merchantId,
-        isActive: true,
-      } as any,
-      order: {
-        updatedAt: 'DESC',
-      },
-    });
-
-    const clientId = String(mappedUser?.ifoodClientId || '').trim();
-    const clientSecret = String(mappedUser?.ifoodClientSecret || '').trim();
-
-    if (!clientId || !clientSecret) {
-      return null;
-    }
-
-    return {
-      clientId,
-      clientSecret,
-    };
   }
 
   private getAuthProfiles(): Record<string, AuthProfile> {

@@ -195,6 +195,16 @@ export class IfoodAutoPollingService
           event?.code === 'CON' || event?.fullCode === 'CONCLUDED',
       );
 
+      const dropCodeRequestedEvents = freshEvents.filter(
+        (event) => event?.fullCode === 'DELIVERY_DROP_CODE_REQUESTED',
+      );
+
+      for (const event of dropCodeRequestedEvents) {
+        this.logger.log(
+          `Evento DELIVERY_DROP_CODE_REQUESTED recebido. OrderId: ${event?.orderId}. MerchantId: ${event?.merchantId || 'N/A'}.`,
+        );
+      }
+
       for (const event of cancellationEvents) {
         await this.deliveryService.cancelDeliveryFromIfood(
           event.orderId,

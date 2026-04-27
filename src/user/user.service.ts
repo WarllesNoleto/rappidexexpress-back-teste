@@ -74,12 +74,6 @@ export class UserService {
     const ifoodMerchantId = useIfoodIntegration
       ? (data.ifoodMerchantId?.trim() ?? '')
       : '';
-    const ifoodClientId = useIfoodIntegration
-      ? (data.ifoodClientId?.trim() ?? '')
-      : '';
-    const ifoodClientSecret = useIfoodIntegration
-      ? (data.ifoodClientSecret?.trim() ?? '')
-      : '';
 
     try {
       const newUser = await this.userRepository.save({
@@ -90,8 +84,8 @@ export class UserService {
         password: passHash,
         useIfoodIntegration,
         ifoodMerchantId,
-        ifoodClientId,
-        ifoodClientSecret,
+        ifoodClientId: '',
+        ifoodClientSecret: '',
         ifoodOrdersReleased: Number(data.ifoodOrdersReleased || 0),
         ifoodOrdersUsed: Number(data.ifoodOrdersUsed || 0),
         ifoodOrdersAvailable: Number(data.ifoodOrdersAvailable || 0),
@@ -199,16 +193,6 @@ export class UserService {
       const ifoodMerchantId = useIfoodIntegration
         ? (data.ifoodMerchantId ?? userToUpdate.ifoodMerchantId ?? '').trim()
         : '';
-      const ifoodClientId = useIfoodIntegration
-        ? (data.ifoodClientId ?? userToUpdate.ifoodClientId ?? '').trim()
-        : '';
-      const ifoodClientSecret = useIfoodIntegration
-        ? (
-            data.ifoodClientSecret ??
-            userToUpdate.ifoodClientSecret ??
-            ''
-          ).trim()
-        : '';
 
       const changedUser = await this.userRepository.save({
         ...userToUpdate,
@@ -216,8 +200,8 @@ export class UserService {
         cityId,
         useIfoodIntegration,
         ifoodMerchantId,
-        ifoodClientId,
-        ifoodClientSecret,
+        ifoodClientId: '',
+        ifoodClientSecret: '',
         ifoodOrdersReleased:
           data.ifoodOrdersReleased ?? userToUpdate.ifoodOrdersReleased ?? 0,
         ifoodOrdersUsed:

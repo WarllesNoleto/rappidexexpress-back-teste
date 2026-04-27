@@ -102,7 +102,12 @@ describe('DeliveryService', () => {
     });
 
     await (service as any).syncIfoodIfNeeded(
-      { id: 'delivery-1', status: StatusDelivery.PENDING },
+      {
+        id: 'delivery-1',
+        status: StatusDelivery.PENDING,
+        ifoodAssignDriverSynced: false,
+        ifoodGoingToOriginSynced: false,
+      },
       { motoboy: { id: 'm1', name: 'João', phone: '11999999999' } },
       { status: StatusDelivery.ONCOURSE },
     );
@@ -118,14 +123,19 @@ describe('DeliveryService', () => {
     );
   });
 
-  it('deve executar sequência logística completa no status COLLECTED', async () => {
+  it('deve executar sequência logística completa no status COLLECTED sem chamar módulo Order', async () => {
     ifoodOrderLinkService.findByDeliveryId.mockResolvedValue({
       ifoodOrderId: 'ifood-2',
       merchantId: 'merchant-2',
     });
 
     await (service as any).syncIfoodIfNeeded(
-      { id: 'delivery-2', status: StatusDelivery.ONCOURSE },
+      {
+        id: 'delivery-2',
+        status: StatusDelivery.ONCOURSE,
+        ifoodArrivedAtOriginSynced: false,
+        ifoodDispatchSynced: false,
+      },
       {},
       { status: StatusDelivery.COLLECTED },
     );
@@ -138,10 +148,7 @@ describe('DeliveryService', () => {
       'ifood-2',
       'merchant-2',
     );
-    expect(ifoodOrdersService.dispatchOrder).toHaveBeenCalledWith(
-      'ifood-2',
-      'merchant-2',
-    );
+    expect(ifoodOrdersService.dispatchOrder).not.toHaveBeenCalled();
   });
 
   it('deve validar código de entrega quando houver DELIVERY_DROP_CODE_REQUESTED', async () => {
@@ -152,15 +159,16 @@ describe('DeliveryService', () => {
     ifoodEventService.hasDeliveryDropCodeRequested.mockResolvedValue(true);
 
     await (service as any).syncIfoodIfNeeded(
-      { id: 'delivery-3', status: StatusDelivery.COLLECTED },
+      {
+        id: 'delivery-3',
+        status: StatusDelivery.AWAITING_CODE,
+        ifoodArrivedAtDestinationSynced: true,
+      },
       {},
       { status: StatusDelivery.FINISHED, deliveryCode: '1234' },
     );
 
-    expect(ifoodOrdersService.notifyArrivedAtDestination).toHaveBeenCalledWith(
-      'ifood-3',
-      'merchant-3',
-    );
+    expect(ifoodOrdersService.notifyArrivedAtDestination).not.toHaveBeenCalled();
     expect(ifoodOrdersService.verifyDeliveryCode).toHaveBeenCalledWith(
       'ifood-3',
       '1234',
@@ -177,7 +185,11 @@ describe('DeliveryService', () => {
 
     await expect(
       (service as any).syncIfoodIfNeeded(
-        { id: 'delivery-4', status: StatusDelivery.COLLECTED },
+        {
+          id: 'delivery-4',
+          status: StatusDelivery.AWAITING_CODE,
+          ifoodArrivedAtDestinationSynced: true,
+        },
         {},
         { status: StatusDelivery.FINISHED, deliveryCode: '9999' },
       ),
