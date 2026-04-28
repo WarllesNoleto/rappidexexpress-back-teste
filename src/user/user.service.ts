@@ -389,7 +389,12 @@ export class UserService {
             isActive: true,
             'motoboy.id': motoboy.id,
             status: {
-              $in: [StatusDelivery.ONCOURSE, StatusDelivery.COLLECTED],
+              $in: [
+                StatusDelivery.ONCOURSE,
+                StatusDelivery.COLLECTED,
+                StatusDelivery.ARRIVED_AT_DESTINATION,
+                StatusDelivery.AWAITING_CODE,
+              ],
             },
           };
 
