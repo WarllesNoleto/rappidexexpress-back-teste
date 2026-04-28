@@ -649,11 +649,17 @@ export class DeliveryService implements OnModuleInit {
         );
       } catch (error: any) {
         this.logger.error(
-          `Claim atômico concluído para delivery ${deliveryFinded.id}, mas falhou sincronização iFood no fluxo PENDENTE -> ACAMINHO.`,
+          `Claim atômico concluído para delivery ${deliveryFinded.id}, mas falhou sincronização iFood no fluxo PENDENTE -> ACAMINHO. Iniciando rollback condicional para PENDENTE.`,
           error?.stack || error,
         );
+
+        await this.rollbackPendingClaimAfterIfoodSyncFailure(
+          deliveryFinded.id,
+          motoboyFinded.id,
+        );
+
         throw new InternalServerErrorException(
-          'Entrega atribuída com sucesso, mas falhou a sincronização com o iFood ao assumir a corrida.',
+          'Não foi possível sincronizar com o iFood. Tente aceitar novamente.',
         );
       }
 
@@ -1099,6 +1105,44 @@ export class DeliveryService implements OnModuleInit {
       { $set: updatePayload } as any,
     );
   }
+
+  private async rollbackPendingClaimAfterIfoodSyncFailure(
+    deliveryId: string,
+    motoboyId: string,
+  ) {
+    const rollbackAt = addHours(new Date(), -3);
+
+    const rollbackResult = await this.deliveryRepository.updateOne(
+      {
+        id: deliveryId,
+        isActive: true,
+        status: StatusDelivery.ONCOURSE,
+        'motoboy.id': motoboyId,
+      } as any,
+      {
+        $set: {
+          status: StatusDelivery.PENDING,
+          motoboy: null,
+          onCoursedAt: null,
+          ifoodAssignDriverSynced: false,
+          ifoodGoingToOriginSynced: false,
+          updatedAt: rollbackAt,
+        },
+      } as any,
+    );
+
+    if (rollbackResult?.modifiedCount) {
+      this.logger.warn(
+        `Rollback aplicado para delivery ${deliveryId} após falha de sincronização iFood no fluxo PENDENTE -> ACAMINHO. Entrega retornada para PENDENTE e motoboy removido.`,
+      );
+      return;
+    }
+
+    this.logger.warn(
+      `Rollback não aplicado para delivery ${deliveryId} após falha de sincronização iFood, pois a entrega não estava mais em ACAMINHO com o mesmo motoboy.`,
+    );
+  }
+
 
   private async claimPendingDeliveryAtomically(
     deliveryFinded: DeliveryEntity,
