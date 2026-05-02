@@ -4,7 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
 import { DeliveryEntity } from '../database/entities';
 import { StatusDelivery } from '../shared/constants/enums.constants';
-import { AiqfomeStoreTokenEntity } from './entities/aiqfome-store-token.entity';
+import { AiqfomeStoreTokenEntity } from './aiqfome-store-token.entity';
 
 @Injectable()
 export class AiqfomeOrderService {

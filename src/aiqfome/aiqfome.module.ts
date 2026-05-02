@@ -7,8 +7,8 @@ import { AiqfomeAuthService } from './aiqfome-auth.service';
 import { AiqfomeOrderService } from './aiqfome-order.service';
 import { AiqfomeLogisticService } from './aiqfome-logistic.service';
 import { AiqfomeWebhookService } from './aiqfome-webhook.service';
-import { AiqfomeStoreTokenEntity } from './entities/aiqfome-store-token.entity';
-import { AiqfomeEventEntity } from './entities/aiqfome-event.entity';
+import { AiqfomeStoreTokenEntity } from './aiqfome-store-token.entity';
+import { AiqfomeEventEntity } from './aiqfome-event.entity';
 
 @Module({
   imports: [

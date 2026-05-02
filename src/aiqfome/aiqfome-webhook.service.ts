@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
 import { v4 as uuid } from 'uuid';
-import { AiqfomeEventEntity } from './entities/aiqfome-event.entity';
+import { AiqfomeEventEntity } from './aiqfome-event.entity';
 import { AiqfomeOrderService } from './aiqfome-order.service';
 
 @Injectable()
