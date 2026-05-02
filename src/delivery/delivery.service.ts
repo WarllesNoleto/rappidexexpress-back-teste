@@ -30,6 +30,7 @@ import { IfoodCreditsService } from '../ifood/ifood-credits.service';
 import { IfoodEventService } from '../ifood/ifood-event.service';
 import { sendNotificationsFor } from 'src/shared/utils/notification.functions';
 import { OrdersGateway } from '../gateway/orders.gateway';
+import { AiqfomeLogisticService } from '../aiqfome/aiqfome-logistic.service';
 
 @Injectable()
 export class DeliveryService implements OnModuleInit {
@@ -52,6 +53,7 @@ export class DeliveryService implements OnModuleInit {
     private readonly ifoodCreditsService: IfoodCreditsService,
     @Inject(forwardRef(() => IfoodEventService))
     private readonly ifoodEventService: IfoodEventService,
+    private readonly aiqfomeLogisticService: AiqfomeLogisticService,
   ) {}
 
   private async syncIfoodIfNeeded(
@@ -731,6 +733,19 @@ export class DeliveryService implements OnModuleInit {
     const subscriptionId =
       deliveryFinded.establishment?.notification?.subscriptionId;
 
+    if (deliveryUpdated.origin === 'aiqfome' && deliveryUpdated.externalOrderId && deliveryData.status) {
+      if (deliveryData.status === StatusDelivery.ONCOURSE) {
+        await this.aiqfomeLogisticService.pickupOngoing(deliveryUpdated.externalOrderId);
+      } else if (deliveryData.status === StatusDelivery.COLLECTED) {
+        await this.aiqfomeLogisticService.arrivedAtMerchant(deliveryUpdated.externalOrderId);
+        await this.aiqfomeLogisticService.deliveryOngoing(deliveryUpdated.externalOrderId);
+      } else if (deliveryData.status === StatusDelivery.ARRIVED_AT_DESTINATION || deliveryData.status === StatusDelivery.AWAITING_CODE) {
+        await this.aiqfomeLogisticService.arrivedAtCustomer(deliveryUpdated.externalOrderId);
+      } else if (deliveryData.status === StatusDelivery.FINISHED) {
+        await this.aiqfomeLogisticService.orderDelivered(deliveryUpdated.externalOrderId);
+      }
+    }
+
     if (subscriptionId) {
       if (
         deliveryData.status &&
@@ -838,7 +853,11 @@ export class DeliveryService implements OnModuleInit {
         onCoursedAt,
         createdAt: addHours(new Date(), -3),
         updatedAt: addHours(new Date(), -3),
-      });
+        origin: 'manual',
+        externalOrderId: null,
+        externalStoreId: null,
+        externalProvider: null,
+      } as any);
 
       this.ordersGateway.emitDeliveryCreated(
         DeliveryResult.fromEntity(newDelivery),
@@ -902,7 +921,11 @@ export class DeliveryService implements OnModuleInit {
         status: StatusDelivery.CANCELED,
         isActive: false,
         updatedAt: addHours(new Date(), -3),
-      });
+        origin: 'manual',
+        externalOrderId: null,
+        externalStoreId: null,
+        externalProvider: null,
+      } as any);
 
       await this.refundCreditForCanceledDelivery(
         deliveryFinded,
@@ -1081,6 +1104,11 @@ export class DeliveryService implements OnModuleInit {
       ifoodDispatchSynced: data.ifoodDispatchSynced ?? false,
       ifoodArrivedAtDestinationSynced:
         data.ifoodArrivedAtDestinationSynced ?? false,
+      origin: data.origin ?? 'manual',
+      externalOrderId: data.externalOrderId ?? null,
+      externalStoreId: data.externalStoreId ?? null,
+      externalProvider: data.externalProvider ?? null,
+
     };
   }
 

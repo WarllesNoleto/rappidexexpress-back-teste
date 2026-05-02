@@ -80,4 +80,16 @@ export class DeliveryEntity {
 
   @Column({ default: false })
   ifoodArrivedAtDestinationSynced?: boolean;
+
+  @Column({ default: 'manual' })
+  origin?: 'manual' | 'ifood' | 'aiqfome';
+
+  @Column({ nullable: true })
+  externalOrderId?: string;
+
+  @Column({ nullable: true })
+  externalStoreId?: string;
+
+  @Column({ nullable: true })
+  externalProvider?: string;
 }
