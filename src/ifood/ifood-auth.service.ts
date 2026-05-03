@@ -143,13 +143,10 @@ export class IfoodAuthService {
       };
     }
 
-    const legacyClientId = String(
-      this.configService.get<string>('IFOOD_CLIENT_ID') || '',
-    ).trim();
-
-    const legacyClientSecret = String(
-      this.configService.get<string>('IFOOD_CLIENT_SECRET') || '',
-    ).trim();
+    const legacyClientId = this.configService.get<string>('IFOOD_CLIENT_ID');
+    const legacyClientSecret = this.configService.get<string>(
+      'IFOOD_CLIENT_SECRET',
+    );
 
     if (legacyClientId && legacyClientSecret) {
       return {
