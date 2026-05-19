@@ -38,7 +38,7 @@ export class IfoodOrdersService {
         'order_details',
         {
           method: 'GET',
-          url: `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}`,
+          url: `https://merchant-api.ifood.com.br/logistics/v1.0/orders/${orderId}`,
           headers: {
             Authorization: `Bearer ${accessToken}`,
           },
