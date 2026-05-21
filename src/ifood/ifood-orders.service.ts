@@ -479,6 +479,9 @@ export class IfoodOrdersService {
 
     const isDelivery = orderType === 'DELIVERY';
     const isMerchantDelivery = deliveredBy === 'MERCHANT';
+    const normalizedStatus = String(orderStatus || '').trim().toUpperCase();
+    const terminalStatuses = new Set(['CONCLUDED', 'CANCELLED']);
+    const isTerminalStatus = terminalStatuses.has(normalizedStatus);
 
     return {
       success: true,
@@ -488,14 +491,16 @@ export class IfoodOrdersService {
         orderType,
         deliveredBy,
         orderStatus,
+        isTerminalStatus,
         merchantId: order?.merchant?.id ?? null,
         merchantName: order?.merchant?.name ?? null,
         customerName: order?.customer?.name ?? null,
         customerPhone: order?.customer?.phone?.number ?? null,
       },
-      canCreateRappidexDelivery: isDelivery && isMerchantDelivery,
-      reason:
-        isDelivery && isMerchantDelivery
+      canCreateRappidexDelivery: isDelivery && isMerchantDelivery && !isTerminalStatus,
+      reason: isTerminalStatus
+        ? `Pedido já está finalizado no iFood com status ${normalizedStatus}.`
+        : isDelivery && isMerchantDelivery
           ? 'Pedido apto para virar entrega no Rappidex.'
           : 'Pedido não está apto para virar entrega no Rappidex.',
     };
@@ -550,10 +555,12 @@ export class IfoodOrdersService {
     ]
       .filter(Boolean)
       .join(', ');
+    const deliveryLocationLink = this.buildIfoodDeliveryLocationLink(order);
 
     const observation = [
       `Pedido iFood #${displayId}`,
       deliveryAddress ? `Endereço: ${deliveryAddress}` : null,
+      deliveryLocationLink ? `Localização: ${deliveryLocationLink}` : null,
       localizer ? `Localizador: ${localizer}` : null,
       order?.delivery?.observations
         ? `Obs entrega: ${order.delivery.observations}`
@@ -568,6 +575,7 @@ export class IfoodOrdersService {
     return {
       clientName: customerName,
       clientPhone: customerPhone,
+      clientLocation: deliveryLocationLink ?? undefined,
       status: StatusDelivery.PENDING,
       establishmentId,
       value: String(totalValue),
@@ -575,6 +583,38 @@ export class IfoodOrdersService {
       soda: 'NÃO',
       observation,
     };
+  }
+
+  private buildGoogleMapsLinkByAddress(address?: string | null): string | null {
+    const normalizedAddress = String(address || '').trim();
+
+    if (!normalizedAddress) {
+      return null;
+    }
+
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(normalizedAddress)}`;
+  }
+
+  private buildIfoodDeliveryLocationLink(order: any): string | null {
+    const latitude = Number(order?.delivery?.deliveryAddress?.coordinates?.latitude);
+    const longitude = Number(
+      order?.delivery?.deliveryAddress?.coordinates?.longitude,
+    );
+
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+      return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
+    }
+
+    const deliveryAddress = [
+      order?.delivery?.deliveryAddress?.streetName,
+      order?.delivery?.deliveryAddress?.streetNumber,
+      order?.delivery?.deliveryAddress?.neighborhood,
+      order?.delivery?.deliveryAddress?.city,
+    ]
+      .filter(Boolean)
+      .join(', ');
+
+    return this.buildGoogleMapsLinkByAddress(deliveryAddress);
   }
   
   async resolveTargetShopkeeperId(

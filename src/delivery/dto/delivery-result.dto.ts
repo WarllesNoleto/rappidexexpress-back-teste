@@ -16,6 +16,9 @@ export class DeliveryResult {
   clientPhone: string;
 
   @Expose()
+  clientLocation?: string;
+
+  @Expose()
   status: StatusDelivery;
 
   @Expose()
@@ -64,9 +67,6 @@ export class DeliveryResult {
   onCoursedAt: Date;
 
   @Expose()
-  arrivedAtStoreAt?: Date;
-
-  @Expose()
   collectedAt: Date;
 
   @Expose()
@@ -86,9 +86,6 @@ export class DeliveryResult {
 
   @Expose()
   isIfoodOrder?: boolean;
-
-  @Expose()
-  externalStatus?: string;
 
   public static fromEntity(delivery: DeliveryEntity) {
     return plainToClass<DeliveryResult, DeliveryResult>(
@@ -118,14 +115,12 @@ export class DeliveryResult {
           ? delivery.establishment.cityId
           : null,
         onCoursedAt: delivery.onCoursedAt,
-        arrivedAtStoreAt: (delivery as any).arrivedAtStoreAt,
         collectedAt: delivery.collectedAt,
         arrivedAtDestinationAt: (delivery as any).arrivedAtDestinationAt,
         finishedAt: delivery.finishedAt,
         motoboyId: delivery.motoboy ? delivery.motoboy.id : null,
         motoboyName: delivery.motoboy ? delivery.motoboy.name : null,
         motoboyPhone: delivery.motoboy ? delivery.motoboy.phone : null,
-        externalStatus: (delivery as any).externalStatus ?? null,
       },
       {
         excludeExtraneousValues: true,

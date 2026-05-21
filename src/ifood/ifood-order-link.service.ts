@@ -30,6 +30,14 @@ export class IfoodOrderLinkService {
     });
   }
 
+
+  async findByShopkeeperId(shopkeeperId: string) {
+    return this.ifoodOrderLinkRepository.find({
+      where: { shopkeeperId },
+      order: { createdAt: 'DESC' as any },
+    } as any);
+  }
+
   async createLink(data: {
     ifoodOrderId: string;
     ifoodDisplayId: string;

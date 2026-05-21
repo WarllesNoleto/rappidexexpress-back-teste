@@ -62,7 +62,7 @@ export class IfoodImportService {
           continue;
         }
 
-        const orderEvents = eligibleEvents.filter(
+        const orderEvents = events.filter(
           (event) => event?.orderId === orderId,
         );
 

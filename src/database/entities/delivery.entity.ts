@@ -21,6 +21,9 @@ export class DeliveryEntity {
   @Column()
   clientPhone: string;
 
+  @Column({ nullable: true })
+  clientLocation?: string;
+
   @Column({ type: 'enum', enum: StatusDelivery })
   status: StatusDelivery;
 
@@ -57,14 +60,8 @@ export class DeliveryEntity {
   @Column()
   onCoursedAt: Date;
 
-  @Column({ nullable: true })
-  arrivedAtStoreAt?: Date;
-
   @Column()
   collectedAt: Date;
-
-  @Column({ nullable: true })
-  externalStatus?: string;
 
   @Column({ nullable: true })
   arrivedAtDestinationAt?: Date;

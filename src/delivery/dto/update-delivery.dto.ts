@@ -13,6 +13,10 @@ export class UpdateDeliveryDto {
   @IsOptional()
   clientPhone?: string;
 
+  @IsString()
+  @IsOptional()
+  clientLocation?: string;
+
   @IsEnum(StatusDelivery)
   @IsOptional()
   status?: StatusDelivery;

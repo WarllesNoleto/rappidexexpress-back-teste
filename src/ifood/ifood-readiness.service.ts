@@ -57,6 +57,10 @@ export class IfoodReadinessService {
         event?.fullCode === 'CANCELLATION_REQUESTED',
     );
 
+    const hasConcludedEvent = filteredEvents.some(
+      (event) => event?.code === 'CON' || event?.fullCode === 'CONCLUDED',
+    );
+
     const hasEligibleImportEvent = filteredEvents.some(
       (event) =>
         event?.code === 'RTP' ||
@@ -77,6 +81,7 @@ export class IfoodReadinessService {
     const canCreateRappidexDelivery =
       !!orderAnalysis?.canCreateRappidexDelivery &&
       !hasCancelledEvent &&
+      !hasConcludedEvent &&
       hasEligibleImportEvent;
 
     return {
@@ -88,16 +93,19 @@ export class IfoodReadinessService {
         latestEventCode: latestEvent?.code ?? null,
         latestEventFullCode: latestEvent?.fullCode ?? null,
         hasCancelledEvent,
+        hasConcludedEvent,
         hasEligibleImportEvent,
       },
       canCreateRappidexDelivery,
       reason: hasCancelledEvent
         ? 'Pedido não pode virar entrega no Rappidex porque já possui evento de cancelamento.'
-        : !hasEligibleImportEvent
-          ? 'Pedido ainda não possui evento elegível para importação. Aguarde RTP ou DSP.'
-          : canCreateRappidexDelivery
-            ? 'Pedido apto para virar entrega no Rappidex.'
-            : 'Pedido não está apto para virar entrega no Rappidex.',
+        : hasConcludedEvent
+          ? 'Pedido não pode virar entrega no Rappidex porque já foi finalizado no iFood.'
+          : !hasEligibleImportEvent
+            ? 'Pedido ainda não possui evento elegível para importação. Aguarde RTP ou DSP.'
+            : canCreateRappidexDelivery
+              ? 'Pedido apto para virar entrega no Rappidex.'
+              : 'Pedido não está apto para virar entrega no Rappidex.',
     };
   }
 }

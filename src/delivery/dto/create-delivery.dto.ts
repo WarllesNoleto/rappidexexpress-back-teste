@@ -11,6 +11,10 @@ export class CreateDeliveryDto {
   @IsString()
   clientPhone: string;
 
+  @IsString()
+  @IsOptional()
+  clientLocation?: string;
+
   @IsEnum(StatusDelivery)
   status: StatusDelivery;
 
