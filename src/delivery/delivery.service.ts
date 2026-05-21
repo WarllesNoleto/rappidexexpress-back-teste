@@ -462,7 +462,7 @@ export class DeliveryService implements OnModuleInit {
     } as ListDeliveriesQueryDTO);
 
     const assignedWhere = this.buildDeliveriesWhere(userForRequest, {
-      status: `${StatusDelivery.ONCOURSE},${StatusDelivery.COLLECTED},${StatusDelivery.ARRIVED_AT_DESTINATION},${StatusDelivery.AWAITING_CODE}`,
+      status: `${StatusDelivery.ONCOURSE},${StatusDelivery.ARRIVED_AT_STORE},${StatusDelivery.COLLECTED},${StatusDelivery.ARRIVED_AT_DESTINATION},${StatusDelivery.AWAITING_CODE}`,
     } as ListDeliveriesQueryDTO);
 
     const [pending, assigned] = await Promise.all([
@@ -563,6 +563,7 @@ export class DeliveryService implements OnModuleInit {
           $in: [
             StatusDelivery.PENDING,
             StatusDelivery.ONCOURSE,
+            StatusDelivery.ARRIVED_AT_STORE,
             StatusDelivery.COLLECTED,
             StatusDelivery.ARRIVED_AT_DESTINATION,
             StatusDelivery.AWAITING_CODE,
@@ -617,6 +618,8 @@ export class DeliveryService implements OnModuleInit {
       const dateForUse = addHours(new Date(), -3);
       if (deliveryData.status === StatusDelivery.ONCOURSE) {
         changedDelivery['onCoursedAt'] = dateForUse;
+      } else if (deliveryData.status === StatusDelivery.ARRIVED_AT_STORE) {
+        changedDelivery['arrivedAtStoreAt'] = dateForUse;
       } else if (deliveryData.status === StatusDelivery.COLLECTED) {
         changedDelivery['collectedAt'] = dateForUse;
         changedDelivery['ifoodArrivedAtOriginSynced'] = true;
@@ -1108,6 +1111,45 @@ export class DeliveryService implements OnModuleInit {
     };
   }
 
+  async markArrivedAtStore(deliveryId: string, user: UserRequest) {
+    return this.updateDelivery(
+      deliveryId,
+      { status: StatusDelivery.ARRIVED_AT_STORE },
+      user,
+    );
+  }
+
+  async updateExternalIfoodStatus(orderId: string, event?: any) {
+    const ifoodLink =
+      await this.ifoodOrderLinkService.findByIfoodOrderId(orderId);
+    if (!ifoodLink) return;
+
+    const delivery = await this.deliveryRepository.findOne({
+      where: { id: ifoodLink.deliveryId, isActive: true } as any,
+    });
+    if (!delivery) return;
+
+    const externalCode = String(
+      event?.fullCode || event?.code || event?.metadata?.status || '',
+    ).trim();
+    if (!externalCode) return;
+
+    const updated = await this.deliveryRepository.save(
+      this.buildPersistableDelivery({
+        ...delivery,
+        ifoodStatus: externalCode,
+        externalStatus: externalCode,
+        logisticsStatus: externalCode,
+        updatedAt: addHours(new Date(), -3),
+      }),
+    );
+
+    this.ordersGateway.emitDeliveryUpdated(
+      DeliveryResult.fromEntity(updated),
+      updated.establishment?.cityId,
+    );
+  }
+
   async changeConfigs(configs: ConfigsDto) {
     if (configs.amountDeliverys) {
       this.motoboysDeliveriesAmount = parseInt(configs.amountDeliverys);
@@ -1153,7 +1195,11 @@ export class DeliveryService implements OnModuleInit {
       updatedAt: data.updatedAt ?? null,
       onCoursedAt: data.onCoursedAt ?? null,
       collectedAt: data.collectedAt ?? null,
+      arrivedAtStoreAt: data.arrivedAtStoreAt ?? null,
       arrivedAtDestinationAt: data.arrivedAtDestinationAt ?? null,
+      ifoodStatus: data.ifoodStatus ?? null,
+      externalStatus: data.externalStatus ?? null,
+      logisticsStatus: data.logisticsStatus ?? null,
       finishedAt: data.finishedAt ?? null,
       ifoodAssignDriverSynced: data.ifoodAssignDriverSynced ?? false,
       ifoodGoingToOriginSynced: data.ifoodGoingToOriginSynced ?? false,

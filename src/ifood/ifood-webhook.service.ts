@@ -91,6 +91,10 @@ export class IfoodWebhookService {
       );
     }
 
+    for (const event of freshEvents) {
+      await this.deliveryService.updateExternalIfoodStatus(event.orderId, event);
+    }
+
     for (const event of cancellationEvents) {
       await this.deliveryService.cancelDeliveryFromIfood(event.orderId, event);
     }

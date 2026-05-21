@@ -70,6 +70,18 @@ export class DeliveryResult {
   collectedAt: Date;
 
   @Expose()
+  arrivedAtStoreAt?: Date;
+
+  @Expose()
+  ifoodStatus?: string;
+
+  @Expose()
+  externalStatus?: string;
+
+  @Expose()
+  logisticsStatus?: string;
+
+  @Expose()
   arrivedAtDestinationAt?: Date;
 
   @Expose()
@@ -116,7 +128,11 @@ export class DeliveryResult {
           : null,
         onCoursedAt: delivery.onCoursedAt,
         collectedAt: delivery.collectedAt,
+        arrivedAtStoreAt: (delivery as any).arrivedAtStoreAt,
         arrivedAtDestinationAt: (delivery as any).arrivedAtDestinationAt,
+        ifoodStatus: (delivery as any).ifoodStatus,
+        externalStatus: (delivery as any).externalStatus,
+        logisticsStatus: (delivery as any).logisticsStatus,
         finishedAt: delivery.finishedAt,
         motoboyId: delivery.motoboy ? delivery.motoboy.id : null,
         motoboyName: delivery.motoboy ? delivery.motoboy.name : null,
