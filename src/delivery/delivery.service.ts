@@ -455,7 +455,7 @@ export class DeliveryService implements OnModuleInit {
     } as ListDeliveriesQueryDTO);
 
     const assignedWhere = this.buildDeliveriesWhere(userForRequest, {
-      status: `${StatusDelivery.ONCOURSE},${StatusDelivery.COLLECTED},${StatusDelivery.ARRIVED_AT_DESTINATION},${StatusDelivery.AWAITING_CODE}`,
+      status: `${StatusDelivery.ONCOURSE},${StatusDelivery.ARRIVED_AT_STORE},${StatusDelivery.COLLECTED},${StatusDelivery.ARRIVED_AT_DESTINATION},${StatusDelivery.AWAITING_CODE}`,
     } as ListDeliveriesQueryDTO);
 
     const [pending, assigned] = await Promise.all([
@@ -556,6 +556,7 @@ export class DeliveryService implements OnModuleInit {
           $in: [
             StatusDelivery.PENDING,
             StatusDelivery.ONCOURSE,
+            StatusDelivery.ARRIVED_AT_STORE,
             StatusDelivery.COLLECTED,
             StatusDelivery.ARRIVED_AT_DESTINATION,
             StatusDelivery.AWAITING_CODE,
@@ -610,6 +611,8 @@ export class DeliveryService implements OnModuleInit {
       const dateForUse = addHours(new Date(), -3);
       if (deliveryData.status === StatusDelivery.ONCOURSE) {
         changedDelivery['onCoursedAt'] = dateForUse;
+      } else if (deliveryData.status === StatusDelivery.ARRIVED_AT_STORE) {
+        changedDelivery['arrivedAtStoreAt'] = dateForUse;
       } else if (deliveryData.status === StatusDelivery.COLLECTED) {
         changedDelivery['collectedAt'] = dateForUse;
         changedDelivery['ifoodArrivedAtOriginSynced'] = true;
@@ -756,6 +759,14 @@ export class DeliveryService implements OnModuleInit {
     }
 
     return DeliveryResult.fromEntity(deliveryUpdated);
+  }
+
+  async arrivedAtStore(deliveryId: string, user: UserRequest) {
+    return await this.updateDelivery(
+      deliveryId,
+      { status: StatusDelivery.ARRIVED_AT_STORE },
+      user,
+    );
   }
 
   async createDelivery(
@@ -1072,7 +1083,9 @@ export class DeliveryService implements OnModuleInit {
       createdBy: data.createdBy ?? null,
       updatedAt: data.updatedAt ?? null,
       onCoursedAt: data.onCoursedAt ?? null,
+      arrivedAtStoreAt: data.arrivedAtStoreAt ?? null,
       collectedAt: data.collectedAt ?? null,
+      externalStatus: data.externalStatus ?? null,
       arrivedAtDestinationAt: data.arrivedAtDestinationAt ?? null,
       finishedAt: data.finishedAt ?? null,
       ifoodAssignDriverSynced: data.ifoodAssignDriverSynced ?? false,

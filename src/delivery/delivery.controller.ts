@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Patch,
   Param,
   Post,
   Put,
@@ -79,6 +80,15 @@ export class DeliveryController {
       data,
       user,
     );
+  }
+
+  @Patch(':deliveryId/arrived-at-store')
+  @UseGuards(JwtAuthGuard)
+  async arrivedAtStore(
+    @Param() param: DeliveryParamsDto,
+    @User() user: UserRequest,
+  ) {
+    return await this.deliveryService.arrivedAtStore(param.deliveryId, user);
   }
 
   @Get()
