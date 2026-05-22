@@ -59,22 +59,16 @@ export class AiqfomeAuthService {
     return { success: true, storeId: rappidexStoreId };
   }
   async exchangeCodeForToken(code: string) {
-    const clientId = String(this.configService.get<string>('AIQFOME_CLIENT_ID') || '').trim();
-    const clientSecret = String(this.configService.get<string>('AIQFOME_CLIENT_SECRET') || '').trim();
-    const redirectUri = String(this.configService.get<string>('AIQFOME_REDIRECT_URI') || '').trim();
+    const clientId = process.env.AIQFOME_CLIENT_ID?.trim();
+    const clientSecret = process.env.AIQFOME_CLIENT_SECRET?.trim();
+    const redirectUri = process.env.AIQFOME_REDIRECT_URI?.trim();
 
-    this.logger.log(`[AiqfomeAuth] exchangeCodeForToken - client_id presente: ${Boolean(clientId)}`);
-    this.logger.log(`[AiqfomeAuth] exchangeCodeForToken - client_secret presente: ${Boolean(clientSecret)}`);
-    this.logger.log(`[AiqfomeAuth] exchangeCodeForToken - redirect_uri usado: ${redirectUri}`);
-    this.logger.log(`[AiqfomeAuth] exchangeCodeForToken - code presente: ${Boolean(code)}`);
-
-    const body = new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      redirect_uri: redirectUri,
-      code,
-      grant_type: 'authorization_code',
-    });
+    const body = new URLSearchParams();
+    body.append('client_id', clientId || '');
+    body.append('client_secret', clientSecret || '');
+    body.append('redirect_uri', redirectUri || '');
+    body.append('code', code);
+    body.append('grant_type', 'authorization_code');
 
     try {
       const response = await axios.post(
@@ -86,13 +80,18 @@ export class AiqfomeAuthService {
           },
         },
       );
+
       return response.data;
     } catch (error: any) {
-      this.logger.error(
-        `[AiqfomeAuth] exchangeCodeForToken falhou - status: ${error?.response?.status}, data: ${JSON.stringify(
-          error?.response?.data,
-        )}`,
-      );
+      console.error('[AiqfomeAuth] erro token:', {
+        status: error.response?.status,
+        data: error.response?.data,
+        clientIdPresente: !!clientId,
+        clientSecretPresente: !!clientSecret,
+        redirectUri,
+        codePresente: !!code,
+      });
+
       throw error;
     }
   }
