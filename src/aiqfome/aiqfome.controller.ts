@@ -32,4 +32,9 @@ export class AiqfomeController {
 
   @Post('orders/:orderId/sync-status')
   syncStatus(@Param('orderId') orderId: string) { return { success: true, orderId }; }
+
+  @Get('orders/:orderId/test')
+  testOrderFetch(@Param('orderId') orderId: string, @Query('storeId') storeId: string) {
+    return this.aiqfomeService.testFetchOrder(storeId, orderId);
+  }
 }

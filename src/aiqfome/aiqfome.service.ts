@@ -9,6 +9,7 @@ export class AiqfomeService {
   oauthStart(storeId?: string) { return this.authService.buildOAuthUrl(storeId); }
   oauthCallback(code?: string, state?: string) { return this.authService.handleCallback(code, state); }
   handleWebhook(headers: Record<string, string | string[] | undefined>, payload: any) { return this.webhookService.processWebhook(headers, payload); }
+  testFetchOrder(storeId: string, orderId: string) { return this.webhookService.testFetchOrder(storeId, orderId); }
 
   async registerV2Webhooks(storeId: string, callbackUrl: string, events: string[]) {
     const token = await this.authService.getValidAccessToken(storeId);

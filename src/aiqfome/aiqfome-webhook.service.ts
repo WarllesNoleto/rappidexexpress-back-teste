@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
 import axios, { AxiosError } from 'axios';
@@ -78,30 +78,95 @@ export class AiqfomeWebhookService {
 
   async handleReadyOrder(store: UserEntity, payload: any) {
     this.logger.log('[AiqfomeWebhook] pedido pronto recebido');
-    const orderId = String(payload?.data?.order_id || payload?.order_id || payload?.orderId || '');
+    const orderId = String(payload?.data?.order_id || payload?.order_id || payload?.orderId || '').trim();
+    const webhookStoreId = String(payload?.storeId || payload?.store_id || payload?.merchant_id || store?.aiqfomeStoreId || store?.id || '').trim();
+
+    this.logger.log(`[AiqfomeWebhook] validando busca V2 store_id=${webhookStoreId || 'n/a'} order_id=${orderId || 'n/a'} rappidex_store_id=${store?.id || 'n/a'}`);
+
     const existing = await this.deliveryRepository.findOneBy({ source: 'aiqfome' as any, externalOrderId: orderId } as any);
     if (existing) { this.logger.log('[AiqfomeWebhook] entrega duplicada ignorada'); return existing; }
-    const token = await this.authService.getValidAccessToken(store.id);
     let order: any = {};
-
     try {
-      const response = await axios.get(`https://merchant-api.aiqfome.com/api/v2/orders/${orderId}`, { headers: { Authorization: `Bearer ${token}` } });
-      order = response.data || {};
+      order = await this.fetchOrderDetailsFromV2(store, orderId, webhookStoreId);
     } catch (error) {
-      const axiosError = error as AxiosError;
-      const status = axiosError.response?.status;
-
-      if (status === 404) {
-        this.logger.warn('[AiqfomeWebhook] pedido aiqfome não encontrado');
-        return { message: 'Webhook recebido, mas pedido não encontrado na aiqfome' };
-      }
-
+      if (error instanceof NotFoundException) return { message: 'Webhook recebido, mas pedido não encontrado na aiqfome' };
       throw error;
     }
     const delivery = await this.deliveryRepository.save({ id: require('uuid').v4(), source: 'aiqfome', externalOrderId: orderId, aiqfomeStoreId: store.aiqfomeStoreId || store.id, clientName: order?.customer?.name || 'Cliente aiqfome', clientPhone: order?.customer?.phone || '', value: String(order?.total || '0'), observation: order?.observation || '', establishment: store, cityId: store.cityId, status: StatusDelivery.PENDING, payment: 'PAGO', soda: '0', isActive: true, createdAt: addHours(new Date(), -3), updatedAt: addHours(new Date(), -3) } as any);
     this.ordersGateway.emitDeliveryCreated(DeliveryResult.fromEntity(delivery as any), store.cityId);
     this.logger.log('[AiqfomeWebhook] entrega criada');
     return delivery;
+  }
+
+  async testFetchOrder(storeId: string, orderId: string) {
+    const normalizedStoreId = String(storeId || '').trim();
+    const normalizedOrderId = String(orderId || '').trim();
+
+    const store =
+      (await this.userRepository.findOneBy({ id: normalizedStoreId })) ||
+      (await this.userRepository.findOneBy({ aiqfomeStoreId: normalizedStoreId }));
+
+    if (!store) {
+      return {
+        found: false,
+        statusCode: 404,
+        error: 'Loja não encontrada para o storeId informado',
+      };
+    }
+
+    try {
+      const order = await this.fetchOrderDetailsFromV2(store, normalizedOrderId, normalizedStoreId);
+      return {
+        found: true,
+        statusCode: 200,
+        orderId: normalizedOrderId,
+        storeId: normalizedStoreId,
+        order,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return {
+          found: false,
+          statusCode: 404,
+          error: 'Webhook recebido, mas pedido não encontrado na aiqfome',
+        };
+      }
+
+      const axiosError = error as AxiosError;
+      return {
+        found: false,
+        statusCode: axiosError.response?.status || 500,
+        error: axiosError.message,
+      };
+    }
+  }
+
+  private async fetchOrderDetailsFromV2(store: UserEntity, orderId: string, webhookStoreId?: string) {
+    const token = await this.authService.getValidAccessToken(store.id);
+    const endpoint = `https://merchant-api.aiqfome.com/api/v2/orders/${encodeURIComponent(orderId)}`;
+    const maskedToken = token ? `${token.slice(0, 6)}...${token.slice(-4)}` : 'n/a';
+
+    this.logger.log(`[AiqfomeWebhook] buscando pedido V2 endpoint=${endpoint.replace(orderId, ':orderId')} store_id=${webhookStoreId || store.aiqfomeStoreId || store.id} rappidex_store_id=${store.id} token=${maskedToken}`);
+
+    try {
+      const response = await axios.get(endpoint, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return response.data || {};
+    } catch (error) {
+      const axiosError = error as AxiosError;
+      const status = axiosError.response?.status;
+      const responseData = axiosError.response?.data;
+
+      this.logger.error('[AiqfomeWebhook] erro ao buscar pedido V2', JSON.stringify({ status, data: responseData, storeId: webhookStoreId || store.aiqfomeStoreId || store.id, orderId }));
+
+      if (status === 404) {
+        this.logger.warn('[AiqfomeWebhook] pedido aiqfome não encontrado');
+        throw new NotFoundException('Webhook recebido, mas pedido não encontrado na aiqfome');
+      }
+
+      throw error;
+    }
   }
 
   async handleCancelOrder(orderId: string) {
