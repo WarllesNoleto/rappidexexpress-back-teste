@@ -13,7 +13,8 @@ export class AiqfomeController {
   }
 
   @Get('oauth/callback')
-  oauthCallback(@Query('code') code: string, @Query('state') state: string) {
+  oauthCallback(@Query() query: { code?: string; state?: string }) {
+    const { code, state } = query;
     return this.aiqfomeService.oauthCallback(code, state);
   }
 
