@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
 import axios, { AxiosError } from 'axios';
@@ -12,6 +12,14 @@ import { AiqfomeAuthService } from './aiqfome-auth.service';
 @Injectable()
 export class AiqfomeWebhookService {
   private readonly logger = new Logger(AiqfomeWebhookService.name);
+  private readonly acceptedEvents = new Set([
+    'new-order',
+    'read-order',
+    'ready-order',
+    'cancel-order',
+    'order-refund',
+    'order-logistic',
+  ]);
   constructor(@InjectRepository(UserEntity) private readonly userRepository: MongoRepository<UserEntity>, @InjectRepository(DeliveryEntity) private readonly deliveryRepository: MongoRepository<DeliveryEntity>, private readonly ordersGateway: OrdersGateway, private readonly authService: AiqfomeAuthService) {}
 
   async processWebhook(headers: Record<string, string | string[] | undefined>, payload: any) {
@@ -23,12 +31,7 @@ export class AiqfomeWebhookService {
         .trim();
     };
 
-    const expectedSecret = normalizeSecret(
-      process.env.AIQFOME_WEBHOOK_SECRET ||
-      process.env.WEBHOOK_SECRET ||
-      process.env.AIQFOME_SECRET ||
-      '',
-    );
+    const expectedSecret = normalizeSecret(process.env.AIQFOME_WEBHOOK_SECRET || '');
 
     const authorizationHeader = headers?.['authorization'];
     const xAiqfomeHeader = headers?.['x-aiqfome-secret'];
@@ -43,14 +46,7 @@ export class AiqfomeWebhookService {
       '',
     );
 
-    const isAuthorized =
-      expectedSecret.length > 0 &&
-      receivedSecret.length > 0 &&
-      receivedSecret === expectedSecret;
-
-    this.logger.warn(
-      `[AiqfomeWebhook] auth check | hasExpected=${expectedSecret.length > 0} | hasReceived=${receivedSecret.length > 0} | expectedLength=${expectedSecret.length} | receivedLength=${receivedSecret.length} | authorized=${isAuthorized}`,
-    );
+    const isAuthorized = expectedSecret.length > 0 && receivedSecret.length > 0 && receivedSecret === expectedSecret;
 
     const storeId = String(payload?.storeId || payload?.store_id || payload?.merchant_id || '').trim();
     const store = storeId
@@ -61,13 +57,19 @@ export class AiqfomeWebhookService {
 
     const isStoreAuthorized = storeSecret.length > 0 && receivedSecret.length > 0 && receivedSecret === storeSecret;
 
-    if (!isAuthorized && !isStoreAuthorized) {
-      throw new BadRequestException('Webhook não autorizado');
+    if (!isAuthorized && !isStoreAuthorized) throw new UnauthorizedException('Webhook não autorizado');
+
+    if (!store) throw new UnauthorizedException('Webhook não autorizado');
+    const event = String(payload?.event || payload?.type || '');
+    const orderId = String(payload?.data?.order_id || payload?.order_id || payload?.orderId || '').trim();
+    this.logger.log(`[AiqfomeWebhook] event=${event} store_id=${storeId || 'n/a'} order_id=${orderId || 'n/a'}`);
+
+    if (!this.acceptedEvents.has(event)) {
+      this.logger.warn(`[AiqfomeWebhook] evento não mapeado: ${event}`);
+      return { ok: true };
     }
 
-    if (!store) throw new BadRequestException('Webhook não autorizado');
-    const event = String(payload?.event || payload?.type || '');
-    this.logger.log(`[AiqfomeWebhook] evento recebido: ${event}`);
+    if (event === 'new-order') return { ok: true, order_id: orderId };
     if (event === 'ready-order') return this.handleReadyOrder(store, payload);
     if (event === 'cancel-order') return this.handleCancelOrder(payload?.order_id || payload?.orderId);
     return { ok: true };
@@ -76,7 +78,7 @@ export class AiqfomeWebhookService {
 
   async handleReadyOrder(store: UserEntity, payload: any) {
     this.logger.log('[AiqfomeWebhook] pedido pronto recebido');
-    const orderId = String(payload?.order_id || payload?.orderId || '');
+    const orderId = String(payload?.data?.order_id || payload?.order_id || payload?.orderId || '');
     const existing = await this.deliveryRepository.findOneBy({ source: 'aiqfome' as any, externalOrderId: orderId } as any);
     if (existing) { this.logger.log('[AiqfomeWebhook] entrega duplicada ignorada'); return existing; }
     const token = await this.authService.getValidAccessToken(store.id);

@@ -23,7 +23,12 @@ export class AiqfomeController {
   webhook(@Headers() headers: Record<string, string | string[] | undefined>, @Body() payload: any) { return this.aiqfomeService.handleWebhook(headers, payload); }
 
   @Post('store/:storeId/register-webhooks')
-  registerWebhooks(@Param('storeId') storeId: string) { return { success: true, storeId, message: 'Registro de webhook deve ser configurado no painel aiqfome/API.' }; }
+  registerWebhooks(@Param('storeId') storeId: string) {
+    const callbackUrl = String(process.env.AIQFOME_WEBHOOK_URL || '').trim();
+    const events = ['new-order', 'read-order', 'ready-order', 'cancel-order', 'order-refund', 'order-logistic'];
+    if (!callbackUrl) return { success: false, message: 'Defina AIQFOME_WEBHOOK_URL com /api/aiqfome/webhook' };
+    return this.aiqfomeService.registerV2Webhooks(storeId, callbackUrl, events);
+  }
 
   @Post('orders/:orderId/sync-status')
   syncStatus(@Param('orderId') orderId: string) { return { success: true, orderId }; }
