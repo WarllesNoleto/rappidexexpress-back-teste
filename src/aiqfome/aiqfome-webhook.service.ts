@@ -15,26 +15,35 @@ export class AiqfomeWebhookService {
   constructor(@InjectRepository(UserEntity) private readonly userRepository: MongoRepository<UserEntity>, @InjectRepository(DeliveryEntity) private readonly deliveryRepository: MongoRepository<DeliveryEntity>, private readonly ordersGateway: OrdersGateway, private readonly authService: AiqfomeAuthService) {}
 
   async processWebhook(headers: Record<string, string | string[] | undefined>, payload: any) {
-    const expectedSecret = (process.env.AIQFOME_WEBHOOK_SECRET || '').trim();
-
-    const authorization = headers?.authorization;
-    const xAiqfomeSecret = headers?.['x-aiqfome-secret'];
-    const xWebhookSecret = headers?.['x-webhook-secret'];
-
-    const rawReceivedSecret =
-      (Array.isArray(authorization) ? authorization[0] : authorization) ||
-      (Array.isArray(xAiqfomeSecret) ? xAiqfomeSecret[0] : xAiqfomeSecret) ||
-      (Array.isArray(xWebhookSecret) ? xWebhookSecret[0] : xWebhookSecret) ||
-      '';
-
-    const receivedSecret = String(rawReceivedSecret)
+    const expectedSecret = String(process.env.AIQFOME_WEBHOOK_SECRET || '')
       .replace(/^Bearer\s+/i, '')
       .trim();
 
-    const isAuthorized = expectedSecret.length > 0 && receivedSecret === expectedSecret;
+    const authorizationHeader = headers?.['authorization'];
+    const xAiqfomeHeader = headers?.['x-aiqfome-secret'];
+    const xWebhookHeader = headers?.['x-webhook-secret'];
+
+    const pickHeader = (value: string | string[] | undefined) => {
+      if (Array.isArray(value)) return value[0] || '';
+      return value || '';
+    };
+
+    const receivedSecret = String(
+      pickHeader(authorizationHeader) ||
+      pickHeader(xAiqfomeHeader) ||
+      pickHeader(xWebhookHeader) ||
+      '',
+    )
+      .replace(/^Bearer\s+/i, '')
+      .trim();
+
+    const isAuthorized =
+      expectedSecret.length > 0 &&
+      receivedSecret.length > 0 &&
+      receivedSecret === expectedSecret;
 
     this.logger.warn(
-      `[AiqfomeWebhook] auth check | hasExpected=${!!expectedSecret} | hasReceived=${!!receivedSecret} | expectedLength=${expectedSecret.length} | receivedLength=${receivedSecret.length} | authorized=${isAuthorized}`,
+      `[AiqfomeWebhook] auth check | hasExpected=${expectedSecret.length > 0} | hasReceived=${receivedSecret.length > 0} | expectedLength=${expectedSecret.length} | receivedLength=${receivedSecret.length} | authorized=${isAuthorized}`,
     );
 
     if (!isAuthorized) {
