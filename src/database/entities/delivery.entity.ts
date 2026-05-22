@@ -95,4 +95,17 @@ export class DeliveryEntity {
 
   @Column({ default: false })
   ifoodArrivedAtDestinationSynced?: boolean;
+
+  @Column({ nullable: true })
+  source?: string;
+
+  @Column({ nullable: true })
+  externalOrderId?: string;
+
+  @Column({ nullable: true })
+  aiqfomeStoreId?: string;
+
+  @Column({ nullable: true })
+  cityId?: string;
+
 }
