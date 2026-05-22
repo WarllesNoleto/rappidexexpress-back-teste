@@ -59,15 +59,15 @@ export class AiqfomeAuthService {
     return { success: true, storeId: rappidexStoreId };
   }
   async exchangeCodeForToken(code: string) {
-    const clientId = process.env.AIQFOME_CLIENT_ID?.trim();
-    const clientSecret = process.env.AIQFOME_CLIENT_SECRET?.trim();
-    const redirectUri = process.env.AIQFOME_REDIRECT_URI?.trim();
+    const clientId = String(process.env.AIQFOME_CLIENT_ID || '').trim();
+    const clientSecret = String(process.env.AIQFOME_CLIENT_SECRET || '').trim();
+    const redirectUri = String(process.env.AIQFOME_REDIRECT_URI || '').trim();
 
     const body = new URLSearchParams();
-    body.append('client_id', clientId || '');
-    body.append('client_secret', clientSecret || '');
-    body.append('redirect_uri', redirectUri || '');
-    body.append('code', code);
+    body.append('client_id', clientId);
+    body.append('client_secret', clientSecret);
+    body.append('redirect_uri', redirectUri);
+    body.append('code', String(code || '').trim());
     body.append('grant_type', 'authorization_code');
 
     try {
