@@ -19,7 +19,7 @@ export class AiqfomeController {
   }
 
   @Post('webhook')
-  webhook(@Headers('authorization') authorization: string, @Body() payload: any) { return this.aiqfomeService.handleWebhook(authorization, payload); }
+  webhook(@Headers() headers: Record<string, string | string[] | undefined>, @Body() payload: any) { return this.aiqfomeService.handleWebhook(headers, payload); }
 
   @Post('store/:storeId/register-webhooks')
   registerWebhooks(@Param('storeId') storeId: string) { return { success: true, storeId, message: 'Registro de webhook deve ser configurado no painel aiqfome/API.' }; }

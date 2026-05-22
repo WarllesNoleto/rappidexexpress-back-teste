@@ -14,16 +14,32 @@ export class AiqfomeWebhookService {
   private readonly logger = new Logger(AiqfomeWebhookService.name);
   constructor(@InjectRepository(UserEntity) private readonly userRepository: MongoRepository<UserEntity>, @InjectRepository(DeliveryEntity) private readonly deliveryRepository: MongoRepository<DeliveryEntity>, private readonly ordersGateway: OrdersGateway, private readonly authService: AiqfomeAuthService) {}
 
-  async processWebhook(authHeader: string | undefined, payload: any) {
+  async processWebhook(headers: Record<string, string | string[] | undefined>, payload: any) {
+    const getHeaderValue = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
+    const receivedSecret =
+      getHeaderValue(headers?.authorization) ||
+      getHeaderValue(headers?.['x-aiqfome-secret']) ||
+      getHeaderValue(headers?.['x-webhook-secret']);
+    const expectedSecret = process.env.AIQFOME_WEBHOOK_SECRET;
+
+    this.logger.warn(
+      `[AiqfomeWebhook] validação de segredo | authorization presente: ${Boolean(getHeaderValue(headers?.authorization))} | AIQFOME_WEBHOOK_SECRET presente: ${Boolean(expectedSecret)} | tamanho recebido: ${String(receivedSecret || '').trim().length} | tamanho esperado: ${String(expectedSecret || '').trim().length}`,
+    );
+
+    if (String(receivedSecret || '').trim() !== String(process.env.AIQFOME_WEBHOOK_SECRET || '').trim()) {
+      throw new BadRequestException('Webhook não autorizado');
+    }
+
     const storeId = String(payload?.storeId || payload?.store_id || payload?.merchant_id || '');
     const store = await this.userRepository.findOneBy({ id: storeId });
-    if (!store?.aiqfomeWebhookSecret || authHeader !== store.aiqfomeWebhookSecret) throw new BadRequestException('Webhook não autorizado');
+    if (!store) throw new BadRequestException('Webhook não autorizado');
     const event = String(payload?.event || payload?.type || '');
     this.logger.log(`[AiqfomeWebhook] evento recebido: ${event}`);
     if (event === 'ready-order') return this.handleReadyOrder(store, payload);
     if (event === 'cancel-order') return this.handleCancelOrder(payload?.order_id || payload?.orderId);
     return { ok: true };
   }
+
 
   async handleReadyOrder(store: UserEntity, payload: any) {
     this.logger.log('[AiqfomeWebhook] pedido pronto recebido');
