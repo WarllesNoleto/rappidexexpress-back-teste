@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import { addHours } from 'date-fns';
 import { DeliveryEntity, UserEntity } from '../database/entities';
 import { OrdersGateway } from '../gateway/orders.gateway';
@@ -80,8 +80,22 @@ export class AiqfomeWebhookService {
     const existing = await this.deliveryRepository.findOneBy({ source: 'aiqfome' as any, externalOrderId: orderId } as any);
     if (existing) { this.logger.log('[AiqfomeWebhook] entrega duplicada ignorada'); return existing; }
     const token = await this.authService.getValidAccessToken(store.id);
-    const response = await axios.get(`https://merchant-api.aiqfome.com/api/v2/orders/${orderId}`, { headers: { Authorization: `Bearer ${token}` } });
-    const order = response.data || {};
+    let order: any = {};
+
+    try {
+      const response = await axios.get(`https://merchant-api.aiqfome.com/api/v2/orders/${orderId}`, { headers: { Authorization: `Bearer ${token}` } });
+      order = response.data || {};
+    } catch (error) {
+      const axiosError = error as AxiosError;
+      const status = axiosError.response?.status;
+
+      if (status === 404) {
+        this.logger.warn('[AiqfomeWebhook] pedido aiqfome não encontrado');
+        return { message: 'Webhook recebido, mas pedido não encontrado na aiqfome' };
+      }
+
+      throw error;
+    }
     const delivery = await this.deliveryRepository.save({ id: require('uuid').v4(), source: 'aiqfome', externalOrderId: orderId, aiqfomeStoreId: store.aiqfomeStoreId || store.id, clientName: order?.customer?.name || 'Cliente aiqfome', clientPhone: order?.customer?.phone || '', value: String(order?.total || '0'), observation: order?.observation || '', establishment: store, cityId: store.cityId, status: StatusDelivery.PENDING, payment: 'PAGO', soda: '0', isActive: true, createdAt: addHours(new Date(), -3), updatedAt: addHours(new Date(), -3) } as any);
     this.ordersGateway.emitDeliveryCreated(DeliveryResult.fromEntity(delivery as any), store.cityId);
     this.logger.log('[AiqfomeWebhook] entrega criada');

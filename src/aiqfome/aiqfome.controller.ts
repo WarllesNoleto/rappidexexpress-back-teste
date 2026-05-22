@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Param, Post, Query, Res } from '@nestjs/common';
 import { AiqfomeService } from './aiqfome.service';
 import { Response } from 'express';
 
@@ -19,6 +19,7 @@ export class AiqfomeController {
   }
 
   @Post('webhook')
+  @HttpCode(200)
   webhook(@Headers() headers: Record<string, string | string[] | undefined>, @Body() payload: any) { return this.aiqfomeService.handleWebhook(headers, payload); }
 
   @Post('store/:storeId/register-webhooks')
