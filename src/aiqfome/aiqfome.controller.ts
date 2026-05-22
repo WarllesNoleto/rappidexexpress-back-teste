@@ -1,15 +1,21 @@
-import { Body, Controller, Get, Headers, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, Query, Res } from '@nestjs/common';
 import { AiqfomeService } from './aiqfome.service';
+import { Response } from 'express';
 
 @Controller('aiqfome')
 export class AiqfomeController {
   constructor(private readonly aiqfomeService: AiqfomeService) {}
 
   @Get('oauth/start')
-  oauthStart(@Query('storeId') storeId?: string) { return this.aiqfomeService.oauthStart(storeId); }
+  oauthStart(@Res() res: Response, @Query('storeId') storeId?: string) {
+    const authUrl = this.aiqfomeService.oauthStart(storeId);
+    return res.redirect(authUrl);
+  }
 
   @Get('oauth/callback')
-  oauthCallback(@Query('code') code: string, @Query('state') storeId: string) { return this.aiqfomeService.oauthCallback(code, storeId); }
+  oauthCallback(@Query('code') code: string, @Query('state') state: string) {
+    return this.aiqfomeService.oauthCallback(code, state);
+  }
 
   @Post('webhook')
   webhook(@Headers('authorization') authorization: string, @Body() payload: any) { return this.aiqfomeService.handleWebhook(authorization, payload); }
