@@ -15,27 +15,33 @@ export class AiqfomeWebhookService {
   constructor(@InjectRepository(UserEntity) private readonly userRepository: MongoRepository<UserEntity>, @InjectRepository(DeliveryEntity) private readonly deliveryRepository: MongoRepository<DeliveryEntity>, private readonly ordersGateway: OrdersGateway, private readonly authService: AiqfomeAuthService) {}
 
   async processWebhook(headers: Record<string, string | string[] | undefined>, payload: any) {
-    const expectedSecret = String(process.env.AIQFOME_WEBHOOK_SECRET || '')
-      .replace(/^Bearer\s+/i, '')
-      .trim();
+    const normalizeSecret = (value: string | string[] | undefined | null) => {
+      const raw = Array.isArray(value) ? value[0] : value;
+      return String(raw || '')
+        .replace(/^Bearer\s+/i, '')
+        .replace(/^['"`]+|['"`]+$/g, '')
+        .trim();
+    };
+
+    const expectedSecret = normalizeSecret(
+      process.env.AIQFOME_WEBHOOK_SECRET ||
+      process.env.WEBHOOK_SECRET ||
+      process.env.AIQFOME_SECRET ||
+      '',
+    );
 
     const authorizationHeader = headers?.['authorization'];
     const xAiqfomeHeader = headers?.['x-aiqfome-secret'];
     const xWebhookHeader = headers?.['x-webhook-secret'];
 
-    const pickHeader = (value: string | string[] | undefined) => {
-      if (Array.isArray(value)) return value[0] || '';
-      return value || '';
-    };
-
-    const receivedSecret = String(
-      pickHeader(authorizationHeader) ||
-      pickHeader(xAiqfomeHeader) ||
-      pickHeader(xWebhookHeader) ||
+    const receivedSecret = normalizeSecret(
+      authorizationHeader ||
+      xAiqfomeHeader ||
+      xWebhookHeader ||
+      headers?.['webhook-secret'] ||
+      headers?.['x-api-key'] ||
       '',
-    )
-      .replace(/^Bearer\s+/i, '')
-      .trim();
+    );
 
     const isAuthorized =
       expectedSecret.length > 0 &&
@@ -46,12 +52,16 @@ export class AiqfomeWebhookService {
       `[AiqfomeWebhook] auth check | hasExpected=${expectedSecret.length > 0} | hasReceived=${receivedSecret.length > 0} | expectedLength=${expectedSecret.length} | receivedLength=${receivedSecret.length} | authorized=${isAuthorized}`,
     );
 
-    if (!isAuthorized) {
+    const storeId = String(payload?.storeId || payload?.store_id || payload?.merchant_id || '').trim();
+    const store = storeId ? await this.userRepository.findOneBy({ id: storeId }) : null;
+    const storeSecret = normalizeSecret(store?.aiqfomeWebhookSecret || '');
+
+    const isStoreAuthorized = storeSecret.length > 0 && receivedSecret.length > 0 && receivedSecret === storeSecret;
+
+    if (!isAuthorized && !isStoreAuthorized) {
       throw new BadRequestException('Webhook não autorizado');
     }
 
-    const storeId = String(payload?.storeId || payload?.store_id || payload?.merchant_id || '');
-    const store = await this.userRepository.findOneBy({ id: storeId });
     if (!store) throw new BadRequestException('Webhook não autorizado');
     const event = String(payload?.event || payload?.type || '');
     this.logger.log(`[AiqfomeWebhook] evento recebido: ${event}`);
