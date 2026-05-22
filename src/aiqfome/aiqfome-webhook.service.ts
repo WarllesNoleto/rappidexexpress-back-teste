@@ -53,7 +53,10 @@ export class AiqfomeWebhookService {
     );
 
     const storeId = String(payload?.storeId || payload?.store_id || payload?.merchant_id || '').trim();
-    const store = storeId ? await this.userRepository.findOneBy({ id: storeId }) : null;
+    const store = storeId
+      ? (await this.userRepository.findOneBy({ id: storeId })) ||
+        (await this.userRepository.findOneBy({ aiqfomeStoreId: storeId }))
+      : null;
     const storeSecret = normalizeSecret(store?.aiqfomeWebhookSecret || '');
 
     const isStoreAuthorized = storeSecret.length > 0 && receivedSecret.length > 0 && receivedSecret === storeSecret;
