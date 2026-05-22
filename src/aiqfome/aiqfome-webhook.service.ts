@@ -143,10 +143,11 @@ export class AiqfomeWebhookService {
 
   private async fetchOrderDetailsFromV2(store: UserEntity, orderId: string, webhookStoreId?: string) {
     const token = await this.authService.getValidAccessToken(store.id);
-    const endpoint = `https://merchant-api.aiqfome.com/api/v2/orders/${encodeURIComponent(orderId)}`;
+    const baseUrl = 'https://merchant-api.aiqfome.com';
+    const endpoint = `${baseUrl}/api/v2/orders/${encodeURIComponent(String(orderId))}`;
     const maskedToken = token ? `${token.slice(0, 6)}...${token.slice(-4)}` : 'n/a';
 
-    this.logger.log(`[AiqfomeWebhook] buscando pedido V2 endpoint=${endpoint.replace(orderId, ':orderId')} store_id=${webhookStoreId || store.aiqfomeStoreId || store.id} rappidex_store_id=${store.id} token=${maskedToken}`);
+    this.logger.log(`[AiqfomeWebhook] buscando pedido V2 endpoint=${endpoint} store_id=${webhookStoreId || store.aiqfomeStoreId || store.id} rappidex_store_id=${store.id} token=${maskedToken}`);
 
     try {
       const response = await axios.get(endpoint, {
@@ -161,6 +162,12 @@ export class AiqfomeWebhookService {
       this.logger.error('[AiqfomeWebhook] erro ao buscar pedido V2', JSON.stringify({ status, data: responseData, storeId: webhookStoreId || store.aiqfomeStoreId || store.id, orderId }));
 
       if (status === 404) {
+        const responseDataAsText = typeof responseData === 'string' ? responseData : JSON.stringify(responseData || {});
+
+        if (responseDataAsText.toLowerCase().includes('no route matched with those values')) {
+          this.logger.error('[AiqfomeWebhook] rota aiqfome inválida ou endpoint montado errado');
+        }
+
         this.logger.warn('[AiqfomeWebhook] pedido aiqfome não encontrado');
         throw new NotFoundException('Webhook recebido, mas pedido não encontrado na aiqfome');
       }
