@@ -23,11 +23,18 @@ export class AiqfomeAuthService {
     if (!clientId) throw new BadRequestException('AIQFOME_CLIENT_ID não configurado. Defina a variável de ambiente AIQFOME_CLIENT_ID.');
     if (!redirectUri) throw new BadRequestException('AIQFOME_REDIRECT_URI não configurado. Defina a variável de ambiente AIQFOME_REDIRECT_URI.');
 
+    const scopes = 'aqf:order:read aqf:order:create aqf:store:read';
+
+    this.logger.log(`[AiqfomeAuth] AIQFOME_CLIENT_ID=${clientId}`);
+    this.logger.log(`[AiqfomeAuth] AIQFOME_REDIRECT_URI=${redirectUri}`);
+    this.logger.log(`[AiqfomeAuth] scopes usados=${scopes}`);
+    this.logger.log(`[AiqfomeAuth] state/storeId=${normalizedStoreId}`);
+
     const params = new URLSearchParams({
       response_type: 'code',
       client_id: clientId,
       redirect_uri: redirectUri,
-      scope: 'aqf:order:read aqf:order:create aqf:store:read aqf:store:create',
+      scope: scopes,
       state: normalizedStoreId,
     });
 
