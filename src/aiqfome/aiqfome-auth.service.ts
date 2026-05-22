@@ -15,19 +15,23 @@ export class AiqfomeAuthService {
     private readonly userRepository: MongoRepository<UserEntity>,
   ) {}
   buildOAuthUrl(storeId?: string) {
-    const clientId = this.configService.get<string>('AIQFOME_CLIENT_ID');
-    const redirectUri = this.configService.get<string>('AIQFOME_REDIRECT_URI');
-    const baseScopes = [
-      'aqf:order:read',
-      'aqf:order:create',
-      'aqf:store:read',
-    ];
-    const includeMenuScopes = this.configService.get<string>('AIQFOME_INCLUDE_MENU_SCOPES') === 'true';
-    const scopes = includeMenuScopes
-      ? [...baseScopes, 'aqf:menu:read', 'aqf:menu:create']
-      : baseScopes;
+    const clientId = String(this.configService.get<string>('AIQFOME_CLIENT_ID') || '').trim();
+    const redirectUri = String(this.configService.get<string>('AIQFOME_REDIRECT_URI') || '').trim();
+    const normalizedStoreId = String(storeId || '').trim();
 
-    return `https://id.magalu.com/oauth/authorize?response_type=code&client_id=${encodeURIComponent(clientId || '')}&redirect_uri=${encodeURIComponent(redirectUri || '')}&scope=${encodeURIComponent(scopes.join(' '))}&state=${encodeURIComponent(storeId || '')}`;
+    if (!normalizedStoreId) throw new BadRequestException('storeId é obrigatório em /api/aiqfome/oauth/start?storeId=ID_DA_LOJA_DO_RAPIDDEX');
+    if (!clientId) throw new BadRequestException('AIQFOME_CLIENT_ID não configurado. Defina a variável de ambiente AIQFOME_CLIENT_ID.');
+    if (!redirectUri) throw new BadRequestException('AIQFOME_REDIRECT_URI não configurado. Defina a variável de ambiente AIQFOME_REDIRECT_URI.');
+
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      scope: 'aqf:order:read aqf:order:create aqf:store:read aqf:store:create',
+      state: normalizedStoreId,
+    });
+
+    return `https://id.magalu.com/oauth/authorize?${params.toString()}`;
   }
 
   async handleCallback(code: string, state: string) {
