@@ -15,18 +15,29 @@ export class AiqfomeWebhookService {
   constructor(@InjectRepository(UserEntity) private readonly userRepository: MongoRepository<UserEntity>, @InjectRepository(DeliveryEntity) private readonly deliveryRepository: MongoRepository<DeliveryEntity>, private readonly ordersGateway: OrdersGateway, private readonly authService: AiqfomeAuthService) {}
 
   async processWebhook(headers: Record<string, string | string[] | undefined>, payload: any) {
-    const getHeaderValue = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
-    const receivedSecret =
-      getHeaderValue(headers?.authorization) ||
-      getHeaderValue(headers?.['x-aiqfome-secret']) ||
-      getHeaderValue(headers?.['x-webhook-secret']);
-    const expectedSecret = process.env.AIQFOME_WEBHOOK_SECRET;
+    const expectedSecret = (process.env.AIQFOME_WEBHOOK_SECRET || '').trim();
+
+    const authorization = headers?.authorization;
+    const xAiqfomeSecret = headers?.['x-aiqfome-secret'];
+    const xWebhookSecret = headers?.['x-webhook-secret'];
+
+    const rawReceivedSecret =
+      (Array.isArray(authorization) ? authorization[0] : authorization) ||
+      (Array.isArray(xAiqfomeSecret) ? xAiqfomeSecret[0] : xAiqfomeSecret) ||
+      (Array.isArray(xWebhookSecret) ? xWebhookSecret[0] : xWebhookSecret) ||
+      '';
+
+    const receivedSecret = String(rawReceivedSecret)
+      .replace(/^Bearer\s+/i, '')
+      .trim();
+
+    const isAuthorized = expectedSecret.length > 0 && receivedSecret === expectedSecret;
 
     this.logger.warn(
-      `[AiqfomeWebhook] validação de segredo | authorization presente: ${Boolean(getHeaderValue(headers?.authorization))} | AIQFOME_WEBHOOK_SECRET presente: ${Boolean(expectedSecret)} | tamanho recebido: ${String(receivedSecret || '').trim().length} | tamanho esperado: ${String(expectedSecret || '').trim().length}`,
+      `[AiqfomeWebhook] auth check | hasExpected=${!!expectedSecret} | hasReceived=${!!receivedSecret} | expectedLength=${expectedSecret.length} | receivedLength=${receivedSecret.length} | authorized=${isAuthorized}`,
     );
 
-    if (String(receivedSecret || '').trim() !== String(process.env.AIQFOME_WEBHOOK_SECRET || '').trim()) {
+    if (!isAuthorized) {
       throw new BadRequestException('Webhook não autorizado');
     }
 
