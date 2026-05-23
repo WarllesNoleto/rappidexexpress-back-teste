@@ -37,4 +37,9 @@ export class AiqfomeController {
   testOrderFetch(@Param('orderId') orderId: string, @Query('storeId') storeId: string) {
     return this.aiqfomeService.testFetchOrder(storeId, orderId);
   }
+
+  @Get('debug/v2-routes')
+  debugV2Routes(@Query('storeId') storeId: string, @Query('orderId') orderId: string) {
+    return this.aiqfomeService.debugV2Routes(storeId, orderId);
+  }
 }

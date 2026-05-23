@@ -141,6 +141,81 @@ export class AiqfomeWebhookService {
     }
   }
 
+  async debugV2Routes(storeId: string, orderId: string) {
+    const normalizedStoreId = String(storeId || '').trim();
+    const normalizedOrderId = String(orderId || '').trim();
+
+    if (!normalizedStoreId) throw new BadRequestException('storeId é obrigatório');
+    if (!normalizedOrderId) throw new BadRequestException('orderId é obrigatório');
+
+    const store =
+      (await this.userRepository.findOneBy({ id: normalizedStoreId })) ||
+      (await this.userRepository.findOneBy({ aiqfomeStoreId: normalizedStoreId }));
+
+    if (!store) throw new NotFoundException('Loja não encontrada para o storeId informado');
+
+    const token = await this.authService.getValidAccessToken(store.id);
+    const tokenMask = token ? `${token.slice(0, 6)}...${token.slice(-4)}` : 'n/a';
+    const tokenScopes = this.extractScopesFromToken(token);
+    const usedCorrectStoreToken = normalizedStoreId === store.id || normalizedStoreId === String(store.aiqfomeStoreId || '').trim();
+    const baseUrl = 'https://merchant-api.aiqfome.com';
+    const requests = [
+      { method: 'GET', url: `${baseUrl}/api/v2/orders` },
+      { method: 'GET', url: `${baseUrl}/api/v2/orders/open` },
+      { method: 'GET', url: `${baseUrl}/api/v2/orders/search` },
+      { method: 'GET', url: `${baseUrl}/api/v2/orders/${encodeURIComponent(normalizedOrderId)}` },
+    ];
+
+    const results = await Promise.all(
+      requests.map(async (request) => {
+        try {
+          const response = await axios.get(request.url, { headers: { Authorization: `Bearer ${token}` } });
+          return {
+            method: request.method,
+            url: request.url,
+            status: response.status,
+            data: response.data,
+            usedCorrectStoreToken,
+            tokenScopes,
+            tokenMask,
+          };
+        } catch (error) {
+          const axiosError = error as AxiosError;
+          const status = axiosError.response?.status || 500;
+          const responseData = axiosError.response?.data;
+
+          this.logAiqfomeHttpError({
+            context: 'debug-v2-route',
+            status,
+            responseData,
+            orderId: normalizedOrderId,
+            storeId: normalizedStoreId,
+            url: request.url,
+          });
+
+          return {
+            method: request.method,
+            url: request.url,
+            status,
+            data: responseData || { message: axiosError.message },
+            usedCorrectStoreToken,
+            tokenScopes,
+            tokenMask,
+          };
+        }
+      }),
+    );
+
+    return {
+      storeId: normalizedStoreId,
+      resolvedRappidexStoreId: store.id,
+      resolvedAiqfomeStoreId: store.aiqfomeStoreId || null,
+      tokenMask,
+      tokenScopes,
+      tests: results,
+    };
+  }
+
   private async fetchOrderDetailsFromV2(store: UserEntity, orderId: string, webhookStoreId?: string) {
     const token = await this.authService.getValidAccessToken(store.id);
     const baseUrl = 'https://merchant-api.aiqfome.com';
@@ -160,6 +235,14 @@ export class AiqfomeWebhookService {
       const responseData = axiosError.response?.data;
 
       this.logger.error('[AiqfomeWebhook] erro ao buscar pedido V2', JSON.stringify({ status, data: responseData, storeId: webhookStoreId || store.aiqfomeStoreId || store.id, orderId }));
+      this.logAiqfomeHttpError({
+        context: 'fetch-order-v2',
+        status: status || 500,
+        responseData,
+        orderId,
+        storeId: webhookStoreId || store.aiqfomeStoreId || store.id,
+        url: endpoint,
+      });
 
       if (status === 404) {
         const responseDataAsText = typeof responseData === 'string' ? responseData : JSON.stringify(responseData || {});
@@ -185,5 +268,49 @@ export class AiqfomeWebhookService {
     const saved = await this.deliveryRepository.save(delivery);
     this.ordersGateway.emitDeliveryUpdated(DeliveryResult.fromEntity(saved as any), saved?.establishment?.cityId);
     return saved;
+  }
+
+  private logAiqfomeHttpError(params: {
+    context: string;
+    status: number;
+    responseData: unknown;
+    orderId?: string;
+    storeId?: string;
+    url?: string;
+  }) {
+    const responseAsText = typeof params.responseData === 'string'
+      ? params.responseData
+      : JSON.stringify(params.responseData || {});
+    const normalizedResponse = responseAsText.toLowerCase();
+
+    if (params.status === 404 && normalizedResponse.includes('no route matched with those values')) {
+      this.logger.error(`[AiqfomeWebhook] ${params.context}: 404 rota/base URL não reconhecida pela API aiqfome store_id=${params.storeId || 'n/a'} order_id=${params.orderId || 'n/a'} url=${params.url || 'n/a'}`);
+      return;
+    }
+
+    if (params.status === 404) {
+      this.logger.warn(`[AiqfomeWebhook] ${params.context}: 404 pedido não encontrado store_id=${params.storeId || 'n/a'} order_id=${params.orderId || 'n/a'} url=${params.url || 'n/a'}`);
+      return;
+    }
+
+    if (params.status === 401 || params.status === 403) {
+      this.logger.error(`[AiqfomeWebhook] ${params.context}: ${params.status} token/escopo/permissão store_id=${params.storeId || 'n/a'} order_id=${params.orderId || 'n/a'} url=${params.url || 'n/a'}`);
+    }
+  }
+
+  private extractScopesFromToken(token: string): string[] | null {
+    const tokenParts = String(token || '').split('.');
+    if (tokenParts.length < 2) return null;
+
+    try {
+      const payload = JSON.parse(Buffer.from(tokenParts[1], 'base64url').toString('utf8')) as Record<string, any>;
+      const rawScopes = payload.scope || payload.scopes || payload.authorities;
+      if (Array.isArray(rawScopes)) return rawScopes.map((scope) => String(scope));
+      if (typeof rawScopes === 'string') return rawScopes.split(' ').filter(Boolean);
+      return null;
+    } catch (error) {
+      this.logger.warn('[AiqfomeWebhook] não foi possível extrair scopes do token');
+      return null;
+    }
   }
 }
