@@ -9,11 +9,13 @@ import axios from 'axios';
 @Injectable()
 export class AiqfomeAuthService {
   private readonly logger = new Logger(AiqfomeAuthService.name);
+
   constructor(
     private readonly configService: ConfigService,
     @InjectRepository(UserEntity)
     private readonly userRepository: MongoRepository<UserEntity>,
   ) {}
+
   buildOAuthUrl(storeId?: string) {
     const clientId = String(this.configService.get<string>('AIQFOME_CLIENT_ID') || '').trim();
     const redirectUri = String(this.configService.get<string>('AIQFOME_REDIRECT_URI') || '').trim();
@@ -24,12 +26,6 @@ export class AiqfomeAuthService {
     if (!redirectUri) throw new BadRequestException('AIQFOME_REDIRECT_URI não configurado. Defina a variável de ambiente AIQFOME_REDIRECT_URI.');
 
     const scope = 'aqf:order:read';
-
-    this.logger.log(`[AiqfomeAuth] AIQFOME_CLIENT_ID=${clientId}`);
-    this.logger.log(`[AiqfomeAuth] AIQFOME_REDIRECT_URI=${redirectUri}`);
-    this.logger.log(`[AiqfomeAuth] scope usado=${scope}`);
-    this.logger.log(`[AiqfomeAuth] state/storeId=${normalizedStoreId}`);
-
     const params = new URLSearchParams({
       response_type: 'code',
       client_id: clientId,
@@ -49,15 +45,14 @@ export class AiqfomeAuthService {
       String(this.configService.get<string>('AIQFOME_DEFAULT_RAPIDDEX_STORE_ID') || '').trim();
 
     if (!rappidexStoreId) {
-      throw new BadRequestException(
-        'storeId não informado. Use state ou configure AIQFOME_DEFAULT_RAPIDDEX_STORE_ID',
-      );
+      throw new BadRequestException('storeId não informado. Use state ou configure AIQFOME_DEFAULT_RAPIDDEX_STORE_ID');
     }
 
     const tokenData = await this.exchangeCodeForToken(code);
     await this.saveTokens(rappidexStoreId, tokenData);
     return { success: true, storeId: rappidexStoreId };
   }
+
   async exchangeCodeForToken(code: string) {
     const clientId = String(process.env.AIQFOME_CLIENT_ID || '').trim();
     const clientSecret = String(process.env.AIQFOME_CLIENT_SECRET || '').trim();
@@ -70,32 +65,64 @@ export class AiqfomeAuthService {
     body.append('code', String(code || '').trim());
     body.append('grant_type', 'authorization_code');
 
-    try {
-      const response = await axios.post(
-        'https://id.magalu.com/oauth/token',
-        body.toString(),
-        {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-        },
-      );
+    const response = await axios.post('https://id.magalu.com/oauth/token', body.toString(), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
 
-      return response.data;
-    } catch (error: any) {
-      console.error('[AiqfomeAuth] erro token:', {
-        status: error.response?.status,
-        data: error.response?.data,
-        clientIdPresente: !!clientId,
-        clientSecretPresente: !!clientSecret,
-        redirectUri,
-        codePresente: !!code,
-      });
-
-      throw error;
-    }
+    return response.data;
   }
-  async refreshToken(storeId: string) { const store = await this.userRepository.findOneBy({ id: storeId }); const refreshToken = String(store?.aiqfomeRefreshToken || '').trim(); if (!refreshToken) throw new BadRequestException('refresh_token não encontrado'); const body = new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: this.configService.get<string>('AIQFOME_CLIENT_ID') || '', client_secret: this.configService.get<string>('AIQFOME_CLIENT_SECRET') || '' }); const response = await axios.post('https://id.magalu.com/oauth/token', body.toString(), { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }); await this.saveTokens(storeId, response.data); this.logger.log(`[AiqfomeAuth] token renovado para loja ${storeId}`); return response.data; }
-  async getValidAccessToken(storeId: string) { const store = await this.userRepository.findOneBy({ id: storeId }); if (!store?.aiqfomeAccessToken) throw new BadRequestException('Loja sem token aiqfome'); if (store.aiqfomeTokenExpiresAt && new Date(store.aiqfomeTokenExpiresAt).getTime() <= Date.now() + 60_000) { const refreshed = await this.refreshToken(storeId); return refreshed.access_token; } return store.aiqfomeAccessToken; }
-  private async saveTokens(storeId: string, tokenData: any) { const expiresIn = Number(tokenData?.expires_in || 3600); const aiqfomeStoreId = String(this.configService.get<string>('AIQFOME_TEST_STORE_ID') || '').trim() || '140703'; await this.userRepository.update({ id: storeId }, { aiqfomeEnabled: true, aiqfomeStoreId, aiqfomeAccessToken: tokenData?.access_token, aiqfomeRefreshToken: tokenData?.refresh_token, aiqfomeTokenExpiresAt: new Date(Date.now() + expiresIn * 1000), updatedAt: addHours(new Date(), -3) } as any); }
+
+  async refreshToken(companyId: string) {
+    const company = await this.userRepository.findOneBy({ id: companyId });
+    const refreshToken = String(company?.aiqfomeRefreshToken || '').trim();
+
+    if (!refreshToken) throw new BadRequestException('refresh_token não encontrado');
+
+    const body = new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: String(this.configService.get<string>('AIQFOME_CLIENT_ID') || ''),
+      client_secret: String(this.configService.get<string>('AIQFOME_CLIENT_SECRET') || ''),
+    });
+
+    const response = await axios.post('https://id.magalu.com/oauth/token', body.toString(), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+
+    await this.saveTokens(companyId, response.data, company?.aiqfomeStoreId);
+    this.logger.log(`[AiqfomeAuth] token renovado para empresa ${companyId}`);
+
+    return response.data;
+  }
+
+  async getValidAccessToken(companyId: string) {
+    const company = await this.userRepository.findOneBy({ id: companyId });
+    if (!company?.aiqfomeAccessToken) throw new BadRequestException('Empresa sem token aiqfome');
+
+    if (company.aiqfomeTokenExpiresAt && new Date(company.aiqfomeTokenExpiresAt).getTime() <= Date.now() + 60_000) {
+      const refreshed = await this.refreshToken(companyId);
+      return refreshed.access_token;
+    }
+
+    return company.aiqfomeAccessToken;
+  }
+
+  private async saveTokens(companyId: string, tokenData: any, existingStoreId?: string) {
+    const expiresIn = Number(tokenData?.expires_in || 3600);
+    const fallbackStoreId = String(this.configService.get<string>('AIQFOME_TEST_STORE_ID') || '').trim() || '140703';
+    const scope = String(tokenData?.scope || '').trim();
+
+    await this.userRepository.update(
+      { id: companyId },
+      {
+        aiqfomeEnabled: true,
+        aiqfomeStoreId: String(existingStoreId || fallbackStoreId).trim(),
+        aiqfomeAccessToken: tokenData?.access_token,
+        aiqfomeRefreshToken: tokenData?.refresh_token,
+        aiqfomeScope: scope || undefined,
+        aiqfomeTokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
+        updatedAt: addHours(new Date(), -3),
+      } as any,
+    );
+  }
 }

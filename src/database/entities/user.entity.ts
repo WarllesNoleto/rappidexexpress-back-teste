@@ -95,6 +95,9 @@ export class UserEntity {
   aiqfomeTokenExpiresAt?: Date;
 
   @Column({ nullable: true })
+  aiqfomeScope?: string;
+
+  @Column({ nullable: true })
   aiqfomeWebhookSecret?: string;
 
   @Column({ nullable: true })
