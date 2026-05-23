@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { AxiosError } from 'axios';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
@@ -24,18 +25,58 @@ export class AiqfomeService {
   }
 
   async fetchOrderByCompany(company: UserEntity, orderId: string) {
+    const storeId = String(company?.aiqfomeStoreId || '').trim();
+    const baseUrl = String(
+      this.config.get('AIQFOME_API_BASE_URL') ||
+        'https://plataforma.aiqfome.com',
+    )
+      .trim()
+      .replace(/\/$/, '');
+    const path = `/api/v2/orders/${encodeURIComponent(orderId)}`;
+    const url = `${baseUrl}${path}`;
+    const accessToken = String(company?.aiqfomeAccessToken || '').trim();
+
+    if (!accessToken) {
+      this.logger.error(
+        `[AiqfomeWebhook] token aiqfome ausente para buscar pedido V2 storeId=${storeId || 'n/a'} orderId=${orderId || 'n/a'}`,
+      );
+      return null;
+    }
+
     try {
-      const token = await this.authService.getValidAccessToken(company.id);
-      const url = `${String(this.config.get('AIQFOME_API_BASE_URL') || 'https://purple-box.aiqfome.com').trim()}/api/v2/orders/${encodeURIComponent(orderId)}`;
       const res = await axios.get(url, {
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${accessToken}`,
           Accept: 'application/json',
         },
       });
       return res.data;
-    } catch (error) {
-      this.logger.error('[AiqfomeWebhook] erro seguro ao buscar pedido V2');
+    } catch (rawError) {
+      const error = rawError as AxiosError;
+      const statusCode = error?.response?.status;
+      const apiMessage =
+        (error?.response?.data as any)?.message ||
+        (error?.response?.data as any) ||
+        error?.message ||
+        null;
+
+      this.logger.error(
+        '[AiqfomeWebhook] erro interno ao buscar pedido V2',
+        JSON.stringify({
+          storeId: storeId || null,
+          orderId: orderId || null,
+          baseUrl,
+          path,
+          statusCode: statusCode || null,
+          apiMessage,
+        }),
+      );
+
+      if (statusCode === 404) {
+        this.logger.warn(
+          'Pedido aiqfome não encontrado ou não disponível na API V2',
+        );
+      }
       return null;
     }
   }
@@ -94,6 +135,12 @@ export class AiqfomeService {
     const c = await this.userRepository.findOneBy({ id: companyId });
     if (!c) return { success: false, message: 'Empresa não encontrada' };
     const order = await this.fetchOrderByCompany(c, orderId);
-    return { success: !!order, order };
+    if (!order) {
+      return {
+        success: false,
+        message: 'Pedido aiqfome não encontrado ou não disponível na API V2',
+      };
+    }
+    return { success: true, order };
   }
 }

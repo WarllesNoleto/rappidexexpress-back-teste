@@ -85,7 +85,12 @@ export class AiqfomeWebhookService {
       company,
       orderId,
     );
-    if (!order) return { ok: true };
+    if (!order) {
+      this.logger.error(
+        `[AiqfomeWebhook] erro interno ao processar pedido storeId=${storeId || 'n/a'} orderId=${orderId || 'n/a'}`
+      );
+      return { ok: true };
+    }
     const delivery = await this.deliveryRepository.save(
       this.mapper.toDelivery(order, company, orderId, storeId) as any,
     );
