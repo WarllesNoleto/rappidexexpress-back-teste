@@ -8,6 +8,7 @@ import { OrdersGateway } from '../gateway/orders.gateway';
 import { StatusDelivery } from '../shared/constants/enums.constants';
 import { DeliveryResult } from '../delivery/dto';
 import { AiqfomeAuthService } from './aiqfome-auth.service';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class AiqfomeWebhookService {
@@ -20,7 +21,7 @@ export class AiqfomeWebhookService {
     'order-refund',
     'order-logistic',
   ]);
-  constructor(@InjectRepository(UserEntity) private readonly userRepository: MongoRepository<UserEntity>, @InjectRepository(DeliveryEntity) private readonly deliveryRepository: MongoRepository<DeliveryEntity>, private readonly ordersGateway: OrdersGateway, private readonly authService: AiqfomeAuthService) {}
+  constructor(@InjectRepository(UserEntity) private readonly userRepository: MongoRepository<UserEntity>, @InjectRepository(DeliveryEntity) private readonly deliveryRepository: MongoRepository<DeliveryEntity>, private readonly ordersGateway: OrdersGateway, private readonly authService: AiqfomeAuthService, private readonly configService: ConfigService) {}
 
   async processWebhook(headers: Record<string, string | string[] | undefined>, payload: any) {
     const normalizeSecret = (value: string | string[] | undefined | null) => {
@@ -158,7 +159,8 @@ export class AiqfomeWebhookService {
     const tokenMask = token ? `${token.slice(0, 6)}...${token.slice(-4)}` : 'n/a';
     const tokenScopes = this.extractScopesFromToken(token);
     const usedCorrectStoreToken = normalizedStoreId === store.id || normalizedStoreId === String(store.aiqfomeStoreId || '').trim();
-    const baseUrl = 'https://merchant-api.aiqfome.com';
+    const baseUrl = this.getAiqfomeApiBaseUrl();
+    const defaultHeaders = this.buildV2Headers(token, normalizedStoreId);
     const requests = [
       { method: 'GET', url: `${baseUrl}/api/v2/orders` },
       { method: 'GET', url: `${baseUrl}/api/v2/orders/open` },
@@ -169,12 +171,14 @@ export class AiqfomeWebhookService {
     const results = await Promise.all(
       requests.map(async (request) => {
         try {
-          const response = await axios.get(request.url, { headers: { Authorization: `Bearer ${token}` } });
+          const response = await axios.get(request.url, { headers: defaultHeaders });
           return {
             method: request.method,
             url: request.url,
             status: response.status,
             data: response.data,
+            baseUrl,
+            headersSent: this.sanitizeHeadersForDebug(defaultHeaders),
             usedCorrectStoreToken,
             tokenScopes,
             tokenMask,
@@ -198,6 +202,8 @@ export class AiqfomeWebhookService {
             url: request.url,
             status,
             data: responseData || { message: axiosError.message },
+            baseUrl,
+            headersSent: this.sanitizeHeadersForDebug(defaultHeaders),
             usedCorrectStoreToken,
             tokenScopes,
             tokenMask,
@@ -218,15 +224,16 @@ export class AiqfomeWebhookService {
 
   private async fetchOrderDetailsFromV2(store: UserEntity, orderId: string, webhookStoreId?: string) {
     const token = await this.authService.getValidAccessToken(store.id);
-    const baseUrl = 'https://merchant-api.aiqfome.com';
+    const baseUrl = this.getAiqfomeApiBaseUrl();
     const endpoint = `${baseUrl}/api/v2/orders/${encodeURIComponent(String(orderId))}`;
     const maskedToken = token ? `${token.slice(0, 6)}...${token.slice(-4)}` : 'n/a';
+    const requestHeaders = this.buildV2Headers(token, webhookStoreId || store.aiqfomeStoreId || store.id);
 
-    this.logger.log(`[AiqfomeWebhook] buscando pedido V2 endpoint=${endpoint} store_id=${webhookStoreId || store.aiqfomeStoreId || store.id} rappidex_store_id=${store.id} token=${maskedToken}`);
+    this.logger.log(`[AiqfomeWebhook] buscando pedido V2 baseUrl=${baseUrl} endpoint=${endpoint} store_id=${webhookStoreId || store.aiqfomeStoreId || store.id} rappidex_store_id=${store.id} token=${maskedToken} headers=${JSON.stringify(this.sanitizeHeadersForDebug(requestHeaders))}`);
 
     try {
       const response = await axios.get(endpoint, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: requestHeaders,
       });
       return response.data || {};
     } catch (error) {
@@ -234,7 +241,7 @@ export class AiqfomeWebhookService {
       const status = axiosError.response?.status;
       const responseData = axiosError.response?.data;
 
-      this.logger.error('[AiqfomeWebhook] erro ao buscar pedido V2', JSON.stringify({ status, data: responseData, storeId: webhookStoreId || store.aiqfomeStoreId || store.id, orderId }));
+      this.logger.error('[AiqfomeWebhook] erro ao buscar pedido V2', JSON.stringify({ baseUrl, status, data: responseData, storeId: webhookStoreId || store.aiqfomeStoreId || store.id, orderId, headersSent: this.sanitizeHeadersForDebug(requestHeaders) }));
       this.logAiqfomeHttpError({
         context: 'fetch-order-v2',
         status: status || 500,
@@ -257,6 +264,37 @@ export class AiqfomeWebhookService {
 
       throw error;
     }
+  }
+
+  private getAiqfomeApiBaseUrl() {
+    const configuredBaseUrl = String(this.configService.get<string>('AIQFOME_API_BASE_URL') || '').trim();
+    return configuredBaseUrl || 'https://merchant-api.aiqfome.com';
+  }
+
+  private buildV2Headers(token: string, storeId?: string) {
+    const normalizedStoreId = String(storeId || '').trim();
+    const storeHeaderName = String(this.configService.get<string>('AIQFOME_STORE_HEADER_NAME') || '').trim();
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    };
+
+    if (storeHeaderName && normalizedStoreId) headers[storeHeaderName] = normalizedStoreId;
+
+    return headers;
+  }
+
+  private sanitizeHeadersForDebug(headers: Record<string, string>) {
+    return Object.entries(headers).reduce((accumulator, [key, value]) => {
+      if (key.toLowerCase() === 'authorization') {
+        accumulator[key] = 'Bearer ***';
+        return accumulator;
+      }
+
+      accumulator[key] = value;
+      return accumulator;
+    }, {} as Record<string, string>);
   }
 
   async handleCancelOrder(orderId: string) {
