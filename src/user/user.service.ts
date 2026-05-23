@@ -70,6 +70,7 @@ export class UserService {
       .replace(' ', '');
 
     const city = await this.resolveCity(data.cityId, requester);
+    await this.ensureUniqueAiqfomeStoreId(data.aiqfomeStoreId);
     const useIfoodIntegration = Boolean(data.useIfoodIntegration);
     const ifoodMerchantId = useIfoodIntegration
       ? (data.ifoodMerchantId?.trim() ?? '')
@@ -89,6 +90,12 @@ export class UserService {
         ifoodOrdersReleased: Number(data.ifoodOrdersReleased || 0),
         ifoodOrdersUsed: Number(data.ifoodOrdersUsed || 0),
         ifoodOrdersAvailable: Number(data.ifoodOrdersAvailable || 0),
+        aiqfomeEnabled: Boolean(data.aiqfomeEnabled),
+        aiqfomeStoreId: (data.aiqfomeStoreId || '').trim() || undefined,
+        aiqfomeAccessToken: (data.aiqfomeAccessToken || '').trim() || undefined,
+        aiqfomeRefreshToken: (data.aiqfomeRefreshToken || '').trim() || undefined,
+        aiqfomeTokenExpiresAt: data.aiqfomeTokenExpiresAt ? new Date(data.aiqfomeTokenExpiresAt) : undefined,
+        aiqfomeWebhookSecret: (data.aiqfomeWebhookSecret || '').trim() || undefined,
         isActive: true,
         createdAt: addHours(new Date(), -3),
         updatedAt: addHours(new Date(), -3),
@@ -178,6 +185,8 @@ export class UserService {
     const requester = await this.findUserOrFail(requestUser.id);
     const userToUpdate = await this.findUserOrFail(userId);
 
+    await this.ensureUniqueAiqfomeStoreId(data.aiqfomeStoreId, userToUpdate.id);
+
     this.ensureCityAccess(requester, userToUpdate.cityId);
 
     let cityId = userToUpdate.cityId;
@@ -226,6 +235,8 @@ export class UserService {
 
     this.ensureCityAccess(requester, userToUpdate.cityId);
 
+    await this.ensureUniqueAiqfomeStoreId(data.aiqfomeStoreId, userToUpdate.id);
+
     const nextAccessToken =
       data.aiqfomeAccessToken === undefined
         ? userToUpdate.aiqfomeAccessToken
@@ -263,6 +274,23 @@ export class UserService {
     });
 
     return UserResult.fromEntity(changedUser);
+  }
+
+
+  private async ensureUniqueAiqfomeStoreId(storeId?: string, currentUserId?: string) {
+    const normalizedStoreId = String(storeId || '').trim();
+
+    if (!normalizedStoreId) {
+      return;
+    }
+
+    const existingStore = await this.userRepository.findOneBy({
+      aiqfomeStoreId: normalizedStoreId,
+    });
+
+    if (existingStore && existingStore.id !== currentUserId) {
+      throw new BadRequestException('aiqfomeStoreId já está em uso por outra empresa.');
+    }
   }
 
   private ensureCityAccess(requester: UserEntity, resourceCityId: string) {

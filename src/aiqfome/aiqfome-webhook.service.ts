@@ -32,7 +32,6 @@ export class AiqfomeWebhookService {
         .trim();
     };
 
-    const expectedSecret = normalizeSecret(process.env.AIQFOME_WEBHOOK_SECRET || '');
 
     const authorizationHeader = headers?.['authorization'];
     const xAiqfomeHeader = headers?.['x-aiqfome-secret'];
@@ -47,19 +46,26 @@ export class AiqfomeWebhookService {
       '',
     );
 
-    const isAuthorized = expectedSecret.length > 0 && receivedSecret.length > 0 && receivedSecret === expectedSecret;
-
     const storeId = String(payload?.storeId || payload?.store_id || payload?.merchant_id || '').trim();
     const store = storeId
       ? await this.userRepository.findOneBy({ aiqfomeStoreId: storeId })
       : null;
     const storeSecret = normalizeSecret(store?.aiqfomeWebhookSecret || '');
 
-    const isStoreAuthorized = storeSecret.length > 0 && receivedSecret.length > 0 && receivedSecret === storeSecret;
+    if (!store) {
+      this.logger.warn('Loja aiqfome não encontrada para store_id recebido');
+      return { ok: true };
+    }
 
-    if (!isAuthorized && !isStoreAuthorized) throw new UnauthorizedException('Webhook não autorizado');
+    if (!store.aiqfomeEnabled) {
+      this.logger.warn(`[AiqfomeWebhook] loja aiqfome desativada store_id=${storeId}`);
+      return { ok: true };
+    }
 
-    if (!store) throw new UnauthorizedException('Webhook não autorizado');
+    const expectedSecret = normalizeSecret(store.aiqfomeWebhookSecret || process.env.AIQFOME_WEBHOOK_SECRET || '');
+    const isAuthorized = expectedSecret.length === 0 || (receivedSecret.length > 0 && receivedSecret === expectedSecret);
+
+    if (!isAuthorized) throw new UnauthorizedException('Webhook não autorizado');
     const event = String(payload?.event || payload?.type || '');
     const orderId = String(payload?.data?.order_id || payload?.order_id || payload?.orderId || '').trim();
     this.logger.log(`[AiqfomeWebhook] event=${event} store_id=${storeId || 'n/a'} order_id=${orderId || 'n/a'}`);
