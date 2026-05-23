@@ -95,7 +95,7 @@ describe('DeliveryService', () => {
     expect(service).toBeDefined();
   });
 
-  it('deve executar sequência logística no status ONCOURSE', async () => {
+  it('deve sincronizar entregador a caminho da loja no status ONCOURSE', async () => {
     ifoodOrderLinkService.findByDeliveryId.mockResolvedValue({
       ifoodOrderId: 'ifood-1',
       merchantId: 'merchant-1',
@@ -135,6 +135,7 @@ describe('DeliveryService', () => {
         status: StatusDelivery.ONCOURSE,
         ifoodArrivedAtOriginSynced: false,
         ifoodDispatchSynced: false,
+        motoboy: { id: 'm2', name: 'Maria', phone: '11988888888' },
       },
       {},
       { status: StatusDelivery.COLLECTED },
@@ -144,6 +145,8 @@ describe('DeliveryService', () => {
       'ifood-2',
       'merchant-2',
     );
+    expect(ifoodOrdersService.assignDriver).toHaveBeenCalled();
+    expect(ifoodOrdersService.notifyGoingToOrigin).toHaveBeenCalled();
     expect(ifoodOrdersService.dispatchLogisticsOrder).toHaveBeenCalledWith(
       'ifood-2',
       'merchant-2',

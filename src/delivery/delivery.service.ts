@@ -133,6 +133,28 @@ export class DeliveryService implements OnModuleInit {
       }
 
       if (deliveryData.status === StatusDelivery.COLLECTED) {
+        const motoboy = nextDelivery?.motoboy ?? previousDelivery?.motoboy;
+
+        if (!motoboy) {
+          throw new BadRequestException(
+            'Motoboy não encontrado para sincronizar a coleta ao iFood.',
+          );
+        }
+
+        if (!previousDelivery.ifoodAssignDriverSynced) {
+          await this.ifoodOrdersService.assignDriver(orderId, motoboy, merchantId);
+          this.logger.log(
+            `assignDriver enviado para iFood (na coleta). OrderId: ${orderId}. MerchantId: ${merchantId}.`,
+          );
+        }
+
+        if (!previousDelivery.ifoodGoingToOriginSynced) {
+          await this.ifoodOrdersService.notifyGoingToOrigin(orderId, merchantId);
+          this.logger.log(
+            `goingToOrigin enviado para iFood (na coleta). OrderId: ${orderId}. MerchantId: ${merchantId}.`,
+          );
+        }
+
         if (!previousDelivery.ifoodArrivedAtOriginSynced) {
           await this.ifoodOrdersService.notifyArrivedAtOrigin(orderId, merchantId);
           this.logger.log(
@@ -148,6 +170,8 @@ export class DeliveryService implements OnModuleInit {
         }
 
         return {
+          ifoodAssignDriverSynced: true,
+          ifoodGoingToOriginSynced: true,
           ifoodArrivedAtOriginSynced: true,
           ifoodDispatchSynced: true,
         };
