@@ -49,6 +49,10 @@ export class CreateUserDto {
   @IsOptional()
   useIfoodIntegration?: boolean;
 
+  @IsBoolean()
+  @IsOptional()
+  usesExternalIfoodPdv?: boolean;
+
   @IsString()
   @IsOptional()
   ifoodMerchantId?: string;
@@ -72,16 +76,4 @@ export class CreateUserDto {
   @IsOptional()
   @IsNumber()
   ifoodOrdersAvailable?: number;
-
-  @IsBoolean()
-  @IsOptional()
-  aiqfomeEnabled?: boolean;
-
-  @IsString()
-  @IsOptional()
-  aiqfomeStoreId?: string;
-
-  @IsString()
-  @IsOptional()
-  aiqfomeWebhookSecret?: string;
 }

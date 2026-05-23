@@ -247,6 +247,20 @@ export class IfoodOrdersService {
         throw new BadRequestException('Código de entrega do iFood inválido.');
       }
 
+      if (this.isOrderInTerminalState(status, data)) {
+        this.logger.warn(
+          `Pedido ${orderId} já está em estado terminal no iFood; ignorando validação de código de entrega.`,
+        );
+
+        return {
+          success: true,
+          accepted: true,
+          orderId,
+          message:
+            'Pedido já finalizado/cancelado no iFood. Validação do código ignorada.',
+        };
+      }
+
       throw new InternalServerErrorException(
         'Não foi possível validar o código de entrega no iFood.',
       );
