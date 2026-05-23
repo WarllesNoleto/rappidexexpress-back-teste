@@ -98,6 +98,9 @@ export class UserEntity {
   aiqfomeScope?: string;
 
   @Column({ nullable: true })
+  aiqfomeScopes?: string[];
+
+  @Column({ nullable: true })
   aiqfomeWebhookSecret?: string;
 
   @Column({ nullable: true })

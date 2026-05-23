@@ -37,7 +37,10 @@ export class AiqfomeService {
 
     const hasAccessToken = !!String(company?.aiqfomeAccessToken || '').trim();
     const hasRefreshToken = !!String(company?.aiqfomeRefreshToken || '').trim();
-    const hasReadScope = String(company?.aiqfomeScope || '').split(/\s+/).includes('aqf:order:read');
+    const configuredScopes = Array.isArray(company?.aiqfomeScopes)
+      ? company.aiqfomeScopes
+      : String(company?.aiqfomeScope || '').split(/\s+/).filter(Boolean);
+    const hasReadScope = configuredScopes.includes('aqf:order:read');
 
     if (!storeId || !String(orderId || '').trim()) return null;
 
@@ -55,6 +58,7 @@ export class AiqfomeService {
 
     if (!hasReadScope) {
       this.logger.error('[AiqfomeWebhook] token sem scope aqf:order:read', JSON.stringify({ storeId, orderId }));
+      this.logger.error('[AiqfomeWebhook] Reautorização necessária: o token atual não possui aqf:order:read. Faça uma nova autorização da loja no OAuth do aiqfome.');
       return null;
     }
 
@@ -109,12 +113,23 @@ export class AiqfomeService {
 
   async getStatus(companyId: string) {
     const c = await this.userRepository.findOneBy({ id: companyId });
+    const scopes = Array.isArray(c?.aiqfomeScopes)
+      ? c.aiqfomeScopes
+      : String(c?.aiqfomeScope || '').split(/\s+/).filter(Boolean);
+    const hasOrderReadScope = scopes.includes('aqf:order:read');
+
     return {
       companyId,
       enabled: !!c?.aiqfomeEnabled,
       storeId: c?.aiqfomeStoreId || null,
       integrationStatus: c?.aiqfomeIntegrationStatus || 'not_configured',
       hasAccessToken: !!c?.aiqfomeAccessToken,
+      hasOrderReadScope,
+      aiqfomeScopes: scopes,
+      reauthorizationRequired: !hasOrderReadScope,
+      reauthorizationMessage: hasOrderReadScope
+        ? null
+        : 'Token aiqfome sem scope aqf:order:read. Reautorize a loja pelo OAuth do aiqfome para liberar leitura de pedidos.',
     };
   }
 

@@ -25,7 +25,10 @@ export class AiqfomeAuthService {
     if (!clientId) throw new BadRequestException('AIQFOME_CLIENT_ID não configurado. Defina a variável de ambiente AIQFOME_CLIENT_ID.');
     if (!redirectUri) throw new BadRequestException('AIQFOME_REDIRECT_URI não configurado. Defina a variável de ambiente AIQFOME_REDIRECT_URI.');
 
-    const scope = 'aqf:order:read';
+    const configuredScope = String(this.configService.get<string>('AIQFOME_OAUTH_SCOPE') || '').trim();
+    const scopeSet = new Set(configuredScope.split(/\s+/).filter(Boolean));
+    scopeSet.add('aqf:order:read');
+    const scope = Array.from(scopeSet).join(' ');
     const params = new URLSearchParams({
       response_type: 'code',
       client_id: clientId,
@@ -111,6 +114,7 @@ export class AiqfomeAuthService {
     const expiresIn = Number(tokenData?.expires_in || 3600);
     const fallbackStoreId = String(this.configService.get<string>('AIQFOME_TEST_STORE_ID') || '').trim() || '140703';
     const scope = String(tokenData?.scope || '').trim();
+    const scopes = scope.split(/\s+/).filter(Boolean);
 
     await this.userRepository.update(
       { id: companyId },
@@ -120,6 +124,7 @@ export class AiqfomeAuthService {
         aiqfomeAccessToken: tokenData?.access_token,
         aiqfomeRefreshToken: tokenData?.refresh_token,
         aiqfomeScope: scope || undefined,
+        aiqfomeScopes: scopes.length ? scopes : undefined,
         aiqfomeTokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
         updatedAt: addHours(new Date(), -3),
       } as any,
