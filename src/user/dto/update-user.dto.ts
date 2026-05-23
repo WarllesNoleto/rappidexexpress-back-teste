@@ -78,4 +78,16 @@ export class UpdateUserDto {
   @IsOptional()
   @IsNumber()
   ifoodOrdersAvailable?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  aiqfomeEnabled?: boolean;
+
+  @IsString()
+  @IsOptional()
+  aiqfomeStoreId?: string;
+
+  @IsString()
+  @IsOptional()
+  aiqfomeWebhookSecret?: string;
 }

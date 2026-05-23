@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, HttpCode, Param, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Param, Post, Put, Query, Res } from '@nestjs/common';
 import { AiqfomeService } from './aiqfome.service';
 import { Response } from 'express';
 
@@ -21,6 +21,21 @@ export class AiqfomeController {
   @Post('webhook')
   @HttpCode(200)
   webhook(@Headers() headers: Record<string, string | string[] | undefined>, @Body() payload: any) { return this.aiqfomeService.handleWebhook(headers, payload); }
+
+  @Get('status/:companyId')
+  status(@Param('companyId') companyId: string) { return this.aiqfomeService.getStatus(companyId); }
+
+  @Post('test-connection/:companyId')
+  testConnection(@Param('companyId') companyId: string) { return this.aiqfomeService.testConnection(companyId); }
+
+  @Post('register-webhook/:companyId')
+  registerWebhook(@Param('companyId') companyId: string) { return this.aiqfomeService.registerWebhook(companyId); }
+
+  @Put('config/:companyId')
+  updateConfig(@Param('companyId') companyId: string, @Body() body: any) { return this.aiqfomeService.updateConfig(companyId, body); }
+
+  @Post('sync-order/:companyId/:orderId')
+  syncOrder(@Param('companyId') companyId: string, @Param('orderId') orderId: string) { return this.aiqfomeService.syncOrder(companyId, orderId); }
 
   @Post('store/:storeId/register-webhooks')
   registerWebhooks(@Param('storeId') storeId: string) {

@@ -74,6 +74,9 @@ export class UserService {
     const ifoodMerchantId = useIfoodIntegration
       ? (data.ifoodMerchantId?.trim() ?? '')
       : '';
+    const aiqfomeEnabled = Boolean(data.aiqfomeEnabled);
+    const aiqfomeStoreId = aiqfomeEnabled ? (data.aiqfomeStoreId?.trim() ?? '') : '';
+    const aiqfomeWebhookSecret = aiqfomeEnabled ? (data.aiqfomeWebhookSecret?.trim() ?? '') : '';
 
     try {
       const newUser = await this.userRepository.save({
@@ -89,6 +92,10 @@ export class UserService {
         ifoodOrdersReleased: Number(data.ifoodOrdersReleased || 0),
         ifoodOrdersUsed: Number(data.ifoodOrdersUsed || 0),
         ifoodOrdersAvailable: Number(data.ifoodOrdersAvailable || 0),
+        aiqfomeEnabled,
+        aiqfomeStoreId,
+        aiqfomeWebhookSecret,
+        aiqfomeIntegrationStatus: aiqfomeEnabled ? 'connected' : 'not_configured',
         isActive: true,
         createdAt: addHours(new Date(), -3),
         updatedAt: addHours(new Date(), -3),
@@ -193,6 +200,14 @@ export class UserService {
       const ifoodMerchantId = useIfoodIntegration
         ? (data.ifoodMerchantId ?? userToUpdate.ifoodMerchantId ?? '').trim()
         : '';
+      const aiqfomeEnabled =
+        data.aiqfomeEnabled ?? userToUpdate.aiqfomeEnabled ?? false;
+      const aiqfomeStoreId = aiqfomeEnabled
+        ? (data.aiqfomeStoreId ?? userToUpdate.aiqfomeStoreId ?? '').trim()
+        : '';
+      const aiqfomeWebhookSecret = aiqfomeEnabled
+        ? (data.aiqfomeWebhookSecret ?? userToUpdate.aiqfomeWebhookSecret ?? '').trim()
+        : '';
 
       const changedUser = await this.userRepository.save({
         ...userToUpdate,
@@ -208,6 +223,10 @@ export class UserService {
           data.ifoodOrdersUsed ?? userToUpdate.ifoodOrdersUsed ?? 0,
         ifoodOrdersAvailable:
           data.ifoodOrdersAvailable ?? userToUpdate.ifoodOrdersAvailable ?? 0,
+        aiqfomeEnabled,
+        aiqfomeStoreId,
+        aiqfomeWebhookSecret,
+        aiqfomeIntegrationStatus: aiqfomeEnabled ? 'connected' : 'not_configured',
         updatedAt: addHours(new Date(), -3),
       });
       return UserResult.fromEntity(changedUser);

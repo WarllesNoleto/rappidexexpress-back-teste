@@ -69,6 +69,22 @@ export class DeliveryEntity {
   @Column({ nullable: true })
   ifoodStatus?: string;
 
+
+  @Column({ nullable: true })
+  source?: 'manual' | 'ifood' | 'aiqfome';
+
+  @Column({ nullable: true })
+  aiqfomeOrderId?: string;
+
+  @Column({ nullable: true })
+  aiqfomeStoreId?: string;
+
+  @Column({ nullable: true })
+  externalOrderId?: string;
+
+  @Column({ nullable: true })
+  externalPlatform?: string;
+
   @Column({ nullable: true })
   externalStatus?: string;
 
