@@ -151,6 +151,30 @@ describe('DeliveryService', () => {
     expect(ifoodOrdersService.dispatchOrder).not.toHaveBeenCalled();
   });
 
+  it('deve sincronizar chegada ao estabelecimento no status ARRIVED_AT_STORE sem despachar coleta', async () => {
+    ifoodOrderLinkService.findByDeliveryId.mockResolvedValue({
+      ifoodOrderId: 'ifood-8',
+      merchantId: 'merchant-8',
+    });
+
+    await (service as any).syncIfoodIfNeeded(
+      {
+        id: 'delivery-8',
+        status: StatusDelivery.ONCOURSE,
+        ifoodArrivedAtOriginSynced: false,
+        ifoodDispatchSynced: false,
+      },
+      {},
+      { status: StatusDelivery.ARRIVED_AT_STORE },
+    );
+
+    expect(ifoodOrdersService.notifyArrivedAtOrigin).toHaveBeenCalledWith(
+      'ifood-8',
+      'merchant-8',
+    );
+    expect(ifoodOrdersService.dispatchLogisticsOrder).not.toHaveBeenCalled();
+  });
+
   it('deve validar código de entrega quando houver DELIVERY_DROP_CODE_REQUESTED', async () => {
     ifoodOrderLinkService.findByDeliveryId.mockResolvedValue({
       ifoodOrderId: 'ifood-3',

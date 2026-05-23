@@ -119,11 +119,24 @@ export class DeliveryService implements OnModuleInit {
         };
       }
 
-      if (deliveryData.status === StatusDelivery.COLLECTED) {
+      if (deliveryData.status === StatusDelivery.ARRIVED_AT_STORE) {
         if (!previousDelivery.ifoodArrivedAtOriginSynced) {
           await this.ifoodOrdersService.notifyArrivedAtOrigin(orderId, merchantId);
           this.logger.log(
             `arrivedAtOrigin enviado para iFood. OrderId: ${orderId}. MerchantId: ${merchantId}.`,
+          );
+        }
+
+        return {
+          ifoodArrivedAtOriginSynced: true,
+        };
+      }
+
+      if (deliveryData.status === StatusDelivery.COLLECTED) {
+        if (!previousDelivery.ifoodArrivedAtOriginSynced) {
+          await this.ifoodOrdersService.notifyArrivedAtOrigin(orderId, merchantId);
+          this.logger.log(
+            `arrivedAtOrigin enviado para iFood (fallback em coleta). OrderId: ${orderId}. MerchantId: ${merchantId}.`,
           );
         }
 
