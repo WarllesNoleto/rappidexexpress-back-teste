@@ -216,6 +216,55 @@ export class UserService {
     }
   }
 
+  async updateAiqfomeConfig(
+    data: UpdateUserDto,
+    userId: string,
+    requestUser: UserRequest,
+  ) {
+    const requester = await this.findUserOrFail(requestUser.id);
+    const userToUpdate = await this.findUserOrFail(userId);
+
+    this.ensureCityAccess(requester, userToUpdate.cityId);
+
+    const nextAccessToken =
+      data.aiqfomeAccessToken === undefined
+        ? userToUpdate.aiqfomeAccessToken
+        : String(data.aiqfomeAccessToken || '').trim() ||
+          userToUpdate.aiqfomeAccessToken;
+
+    const nextRefreshToken =
+      data.aiqfomeRefreshToken === undefined
+        ? userToUpdate.aiqfomeRefreshToken
+        : String(data.aiqfomeRefreshToken || '').trim() ||
+          userToUpdate.aiqfomeRefreshToken;
+
+    const changedUser = await this.userRepository.save({
+      ...userToUpdate,
+      aiqfomeEnabled: data.aiqfomeEnabled ?? userToUpdate.aiqfomeEnabled,
+      aiqfomeStoreId:
+        data.aiqfomeStoreId === undefined
+          ? userToUpdate.aiqfomeStoreId
+          : String(data.aiqfomeStoreId || '').trim() ||
+            userToUpdate.aiqfomeStoreId,
+      aiqfomeAccessToken: nextAccessToken,
+      aiqfomeRefreshToken: nextRefreshToken,
+      aiqfomeTokenExpiresAt:
+        data.aiqfomeTokenExpiresAt === undefined
+          ? userToUpdate.aiqfomeTokenExpiresAt
+          : data.aiqfomeTokenExpiresAt
+            ? new Date(data.aiqfomeTokenExpiresAt)
+            : userToUpdate.aiqfomeTokenExpiresAt,
+      aiqfomeWebhookSecret:
+        data.aiqfomeWebhookSecret === undefined
+          ? userToUpdate.aiqfomeWebhookSecret
+          : String(data.aiqfomeWebhookSecret || '').trim() ||
+            userToUpdate.aiqfomeWebhookSecret,
+      updatedAt: addHours(new Date(), -3),
+    });
+
+    return UserResult.fromEntity(changedUser);
+  }
+
   private ensureCityAccess(requester: UserEntity, resourceCityId: string) {
     if (
       requester.type !== UserType.SUPERADMIN &&

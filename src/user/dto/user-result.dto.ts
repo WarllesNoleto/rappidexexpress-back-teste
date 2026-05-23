@@ -57,6 +57,24 @@ export class UserResult {
   @Expose()
   ifoodOrdersAvailable: number;
 
+  @Expose()
+  aiqfomeEnabled?: boolean;
+
+  @Expose()
+  aiqfomeStoreId?: string;
+
+  @Expose()
+  aiqfomeAccessToken?: string;
+
+  @Expose()
+  aiqfomeRefreshToken?: string;
+
+  @Expose()
+  aiqfomeTokenExpiresAt?: Date;
+
+  @Expose()
+  aiqfomeWebhookSecret?: string;
+
   public static fromEntity(user: UserEntity) {
     return plainToClass<UserResult, UserResult>(UserResult, user, {
       excludeExtraneousValues: true,
