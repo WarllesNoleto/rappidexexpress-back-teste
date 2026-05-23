@@ -30,7 +30,6 @@ import { IfoodCreditsService } from '../ifood/ifood-credits.service';
 import { IfoodEventService } from '../ifood/ifood-event.service';
 import { sendNotificationsFor } from 'src/shared/utils/notification.functions';
 import { OrdersGateway } from '../gateway/orders.gateway';
-import { AiqfomeLogisticService } from '../aiqfome/aiqfome-logistic.service';
 
 @Injectable()
 export class DeliveryService implements OnModuleInit {
@@ -53,7 +52,6 @@ export class DeliveryService implements OnModuleInit {
     private readonly ifoodCreditsService: IfoodCreditsService,
     @Inject(forwardRef(() => IfoodEventService))
     private readonly ifoodEventService: IfoodEventService,
-    private readonly aiqfomeLogisticService: AiqfomeLogisticService,
   ) {}
 
   private async syncIfoodIfNeeded(
@@ -724,24 +722,6 @@ export class DeliveryService implements OnModuleInit {
       deliveryUpdated.establishment?.cityId ??
         deliveryFinded.establishment?.cityId,
     );
-
-    if (deliveryData.status && deliveryFinded?.source === 'aiqfome' && deliveryFinded?.externalOrderId) {
-      const endpointByStatus = {
-        [StatusDelivery.ONCOURSE]: 'pickup-ongoing',
-        [StatusDelivery.ARRIVED_AT_STORE]: 'arrived-at-merchant',
-        [StatusDelivery.COLLECTED]: 'delivery-ongoing',
-        [StatusDelivery.ARRIVED_AT_DESTINATION]: 'arrived-at-customer',
-        [StatusDelivery.FINISHED]: 'order-delivered',
-      } as Record<string, string>;
-      const endpoint = endpointByStatus[deliveryData.status];
-      if (endpoint) {
-        void this.aiqfomeLogisticService.sendStatus(
-          deliveryFinded.establishment?.id,
-          deliveryFinded.externalOrderId,
-          endpoint,
-        );
-      }
-    }
 
     if (
       deliveryData.status === StatusDelivery.CANCELED &&

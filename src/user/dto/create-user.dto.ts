@@ -1,6 +1,5 @@
 import {
   IsBoolean,
-  IsDateString,
   IsEnum,
   IsMongoId,
   IsNumber,
@@ -73,28 +72,4 @@ export class CreateUserDto {
   @IsOptional()
   @IsNumber()
   ifoodOrdersAvailable?: number;
-
-  @IsOptional()
-  @IsBoolean()
-  aiqfomeEnabled?: boolean;
-
-  @IsOptional()
-  @IsString()
-  aiqfomeStoreId?: string;
-
-  @IsOptional()
-  @IsString()
-  aiqfomeAccessToken?: string;
-
-  @IsOptional()
-  @IsString()
-  aiqfomeRefreshToken?: string;
-
-  @IsOptional()
-  @IsDateString()
-  aiqfomeTokenExpiresAt?: string;
-
-  @IsOptional()
-  @IsString()
-  aiqfomeWebhookSecret?: string;
 }

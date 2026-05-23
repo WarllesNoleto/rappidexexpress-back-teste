@@ -5,13 +5,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { DeliveryEntity, LogEntity, UserEntity } from '../database/entities';
 import { OrdersGateway } from '../gateway/orders.gateway';
 import { IfoodModule } from '../ifood/ifood.module';
-import { AiqfomeModule } from '../aiqfome/aiqfome.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([UserEntity, DeliveryEntity, LogEntity]),
     forwardRef(() => IfoodModule),
-    forwardRef(() => AiqfomeModule),
   ],
   controllers: [DeliveryController],
   providers: [DeliveryService, OrdersGateway],

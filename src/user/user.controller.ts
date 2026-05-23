@@ -95,22 +95,6 @@ export class UserController {
     return await this.userService.updateUser(data, param.user, user);
   }
 
-  @Put(':user/aiqfome-config')
-  @UseGuards(JwtAuthGuard)
-  async updateAiqfomeConfig(
-    @Param() param: UserParamsDto,
-    @User() user: UserRequest,
-    @Body() data: UpdateUserDto,
-  ) {
-    if (!onlyForAdmin(user.type)) {
-      throw new UnauthorizedException(
-        'Você não tem permissão para esse recurso.',
-      );
-    }
-
-    return await this.userService.updateAiqfomeConfig(data, param.user, user);
-  }
-
   @Get('/myself')
   @ApiOperation({
     operationId: 'GetMyself',
