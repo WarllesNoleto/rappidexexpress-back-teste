@@ -24,8 +24,8 @@ export class AiqfomeService {
   }
 
   private getAiqfomeApiBaseUrl() {
-    const configuredBaseUrl = String(this.configService.get<string>('AIQFOME_API_BASE_URL') || '').trim();
-    return configuredBaseUrl || 'https://merchant-api.aiqfome.com';
+    const configuredBaseUrl = String(this.configService.get<string>('AIQFOME_BASE_URL') || '').trim();
+    return configuredBaseUrl || 'https://plataforma.aiqfome.com';
   }
 
   private buildV2Headers(token: string, storeId?: string) {

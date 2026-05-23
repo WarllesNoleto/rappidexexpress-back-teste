@@ -225,11 +225,10 @@ export class AiqfomeWebhookService {
   private async fetchOrderDetailsFromV2(store: UserEntity, orderId: string, webhookStoreId?: string) {
     const token = await this.authService.getValidAccessToken(store.id);
     const baseUrl = this.getAiqfomeApiBaseUrl();
-    const endpoint = `${baseUrl}/api/v2/orders/${encodeURIComponent(String(orderId))}`;
-    const maskedToken = token ? `${token.slice(0, 6)}...${token.slice(-4)}` : 'n/a';
+    const endpoint = `${baseUrl}/api/v2/orders/${String(orderId)}`;
     const requestHeaders = this.buildV2Headers(token, webhookStoreId || store.aiqfomeStoreId || store.id);
 
-    this.logger.log(`[AiqfomeWebhook] buscando pedido V2 baseUrl=${baseUrl} endpoint=${endpoint} store_id=${webhookStoreId || store.aiqfomeStoreId || store.id} rappidex_store_id=${store.id} token=${maskedToken} headers=${JSON.stringify(this.sanitizeHeadersForDebug(requestHeaders))}`);
+    this.logger.log(`[AiqfomeWebhook] buscando pedido V2 baseUrl=${baseUrl} endpoint=${endpoint} store_id=${webhookStoreId || store.aiqfomeStoreId || store.id} order_id=${orderId}`);
 
     try {
       const response = await axios.get(endpoint, {
@@ -241,7 +240,7 @@ export class AiqfomeWebhookService {
       const status = axiosError.response?.status;
       const responseData = axiosError.response?.data;
 
-      this.logger.error('[AiqfomeWebhook] erro ao buscar pedido V2', JSON.stringify({ baseUrl, status, data: responseData, storeId: webhookStoreId || store.aiqfomeStoreId || store.id, orderId, headersSent: this.sanitizeHeadersForDebug(requestHeaders) }));
+      this.logger.error('[AiqfomeWebhook] erro ao buscar pedido V2', JSON.stringify({ baseUrl, endpoint, status, store_id: webhookStoreId || store.aiqfomeStoreId || store.id, order_id: orderId }));
       this.logAiqfomeHttpError({
         context: 'fetch-order-v2',
         status: status || 500,
@@ -267,8 +266,8 @@ export class AiqfomeWebhookService {
   }
 
   private getAiqfomeApiBaseUrl() {
-    const configuredBaseUrl = String(this.configService.get<string>('AIQFOME_API_BASE_URL') || '').trim();
-    return configuredBaseUrl || 'https://merchant-api.aiqfome.com';
+    const configuredBaseUrl = String(this.configService.get<string>('AIQFOME_BASE_URL') || '').trim();
+    return configuredBaseUrl || 'https://plataforma.aiqfome.com';
   }
 
   private buildV2Headers(token: string, storeId?: string) {
