@@ -72,7 +72,7 @@ export class UserService {
     const city = await this.resolveCity(data.cityId, requester);
     const useIfoodIntegration = Boolean(data.useIfoodIntegration);
     const usesExternalIfoodPdv = useIfoodIntegration
-      ? Boolean(data.usesExternalIfoodPdv)
+      ? Boolean(data.usesExternalIfoodPdv ?? data.usesExternalifoodPdv)
       : false;
     const ifoodMerchantId = useIfoodIntegration
       ? (data.ifoodMerchantId?.trim() ?? '')
@@ -194,7 +194,10 @@ export class UserService {
       const useIfoodIntegration =
         data.useIfoodIntegration ?? userToUpdate.useIfoodIntegration ?? false;
       const usesExternalIfoodPdv = useIfoodIntegration
-        ? (data.usesExternalIfoodPdv ?? userToUpdate.usesExternalIfoodPdv ?? false)
+        ? (data.usesExternalIfoodPdv ??
+            data.usesExternalifoodPdv ??
+            userToUpdate.usesExternalIfoodPdv ??
+            false)
         : false;
 
       const ifoodMerchantId = useIfoodIntegration

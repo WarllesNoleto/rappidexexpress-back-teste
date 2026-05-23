@@ -52,6 +52,9 @@ export class CreateUserDto {
   @IsBoolean()
   @IsOptional()
   usesExternalIfoodPdv?: boolean;
+  @IsBoolean()
+  @IsOptional()
+  usesExternalifoodPdv?: boolean;
 
   @IsString()
   @IsOptional()
