@@ -21,9 +21,9 @@ export class AiqfomeController {
     private readonly webhookService: AiqfomeWebhookService,
   ) {}
 
-  @Get('oauth/start')
-  oauthStart(@Res() res: Response, @Query('storeId') storeId?: string) {
-    const authUrl = this.aiqfomeService.oauthStart(storeId);
+  @Get('oauth/start/:companyId')
+  async oauthStart(@Res() res: Response, @Param('companyId') companyId: string) {
+    const authUrl = await this.aiqfomeService.oauthStart(companyId);
     return res.redirect(authUrl);
   }
 

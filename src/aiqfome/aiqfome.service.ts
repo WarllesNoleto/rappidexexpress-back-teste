@@ -18,8 +18,8 @@ export class AiqfomeService {
     private readonly userRepository: MongoRepository<UserEntity>,
   ) {}
 
-  oauthStart(storeId?: string) {
-    return this.authService.buildOAuthUrl(storeId);
+  oauthStart(companyId: string) {
+    return this.authService.buildOAuthUrlByCompany(companyId);
   }
 
   oauthCallback(code?: string, state?: string) {
