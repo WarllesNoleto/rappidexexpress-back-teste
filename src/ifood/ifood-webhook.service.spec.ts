@@ -16,7 +16,11 @@ describe('IfoodWebhookService', () => {
     } as any;
 
     const deliveryService = {
+      updateExternalIfoodStatus: jest.fn().mockResolvedValue(undefined),
       cancelDeliveryFromIfood: jest.fn().mockResolvedValue(undefined),
+      handleIfoodCancellationRequestFailed: jest
+        .fn()
+        .mockResolvedValue(undefined),
       finishDeliveryFromIfood: jest.fn().mockResolvedValue(undefined),
     } as any;
 

@@ -52,9 +52,7 @@ export class IfoodReadinessService {
     const hasCancelledEvent = filteredEvents.some(
       (event) =>
         event?.code === 'CAN' ||
-        event?.fullCode === 'CANCELLED' ||
-        event?.code === 'CAR' ||
-        event?.fullCode === 'CANCELLATION_REQUESTED',
+        event?.fullCode === 'CANCELLED',
     );
 
     const hasConcludedEvent = filteredEvents.some(

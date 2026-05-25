@@ -192,9 +192,12 @@ export class IfoodAutoPollingService
       const cancellationEvents = freshEvents.filter(
         (event) =>
           event?.code === 'CAN' ||
-          event?.fullCode === 'CANCELLED' ||
-          event?.code === 'CAR' ||
-          event?.fullCode === 'CANCELLATION_REQUESTED',
+          event?.fullCode === 'CANCELLED',
+      );
+      const cancellationRequestFailedEvents = freshEvents.filter(
+        (event) =>
+          event?.code === 'CRF' ||
+          event?.fullCode === 'CANCELLATION_REQUEST_FAILED',
       );
 
       const conclusionEvents = freshEvents.filter(
@@ -214,6 +217,13 @@ export class IfoodAutoPollingService
 
       for (const event of cancellationEvents) {
         await this.deliveryService.cancelDeliveryFromIfood(
+          event.orderId,
+          event,
+        );
+      }
+
+      for (const event of cancellationRequestFailedEvents) {
+        await this.deliveryService.handleIfoodCancellationRequestFailed(
           event.orderId,
           event,
         );

@@ -158,14 +158,24 @@ export class DeliveryService implements OnModuleInit {
 
       if (deliveryData.status === StatusDelivery.CANCELED) {
         try {
-          await this.ifoodOrdersService.requestCancellation(
+          const cancellationResult =
+            await this.ifoodOrdersService.requestCancellation(
             orderId,
             'Cancelado no Rappidex pela alteração do status da entrega.',
             merchantId,
           );
+          this.logger.warn(
+            `Solicitação de cancelamento enviada ao iFood por mudança de status. DeliveryId: ${previousDelivery.id}. OrderId: ${orderId}. Accepted: ${cancellationResult?.accepted === true}. Resultado: ${JSON.stringify(cancellationResult)}`,
+          );
+
+          if (cancellationResult?.accepted !== true) {
+            this.logger.warn(
+              `iFood não aceitou a solicitação de cancelamento para delivery ${previousDelivery.id}. Divergência evitada: pedido local cancelado, aguardando evento CANCELLED. Motivo: ${cancellationResult?.message || 'não informado'}`,
+            );
+          }
         } catch (error: any) {
           this.logger.warn(
-            `Falha ao solicitar cancelamento no iFood para delivery ${previousDelivery.id}. O cancelamento local seguirá normalmente. status=${error?.response?.status || error?.status || 'N/A'} message=${error?.response?.data?.message || error?.message || error}`,
+            `Falha ao solicitar cancelamento no iFood para delivery ${previousDelivery.id}. Divergência potencial: pedido local cancelado sem confirmação externa. status=${error?.response?.status || error?.status || 'N/A'} message=${error?.response?.data?.message || error?.message || error}`,
           );
         }
 
@@ -1151,11 +1161,22 @@ export class DeliveryService implements OnModuleInit {
     );
 
     if (ifoodLink) {
-      await this.ifoodOrdersService.requestCancellation(
+      const cancellationResult =
+        await this.ifoodOrdersService.requestCancellation(
         ifoodLink.ifoodOrderId,
         'Cancelado no Rappidex pela exclusão da entrega.',
         ifoodLink.merchantId,
       );
+
+      this.logger.warn(
+        `Solicitação de cancelamento enviada ao iFood por DELETE /delivery/:id. DeliveryId: ${deliveryFinded.id}. OrderId: ${ifoodLink.ifoodOrderId}. Accepted: ${cancellationResult?.accepted === true}. Resultado: ${JSON.stringify(cancellationResult)}`,
+      );
+
+      if (cancellationResult?.accepted !== true) {
+        throw new BadRequestException(
+          `Cancelamento não aceito pelo iFood: ${cancellationResult?.message || 'não foi possível confirmar a solicitação'}. A entrega não foi cancelada localmente para evitar divergência.`,
+        );
+      }
     }
 
     try {
@@ -1229,6 +1250,40 @@ export class DeliveryService implements OnModuleInit {
 
     this.logger.warn(
       `Entrega ${deliveryFinded.id} cancelada no Rappidex por evento ${event?.fullCode || event?.code || 'CANCELLED'} do iFood. OrderId: ${orderId}`,
+    );
+  }
+
+  async handleIfoodCancellationRequestFailed(orderId: string, event?: any) {
+    const ifoodLink =
+      await this.ifoodOrderLinkService.findByIfoodOrderId(orderId);
+    if (!ifoodLink) return;
+
+    const delivery = await this.deliveryRepository.findOne({
+      where: { id: ifoodLink.deliveryId, isActive: true } as any,
+      relations: { establishment: true },
+    });
+    if (!delivery) return;
+
+    const ifoodFailureCode =
+      event?.fullCode || event?.code || 'CANCELLATION_REQUEST_FAILED';
+    const failureNote = `Falha de cancelamento iFood: ${ifoodFailureCode} | OrderId: ${orderId}`;
+    const nextObservation = delivery.observation
+      ? `${delivery.observation} | ${failureNote}`
+      : failureNote;
+
+    await this.deliveryRepository.save(
+      this.buildPersistableDelivery({
+        ...delivery,
+        ifoodStatus: ifoodFailureCode,
+        externalStatus: ifoodFailureCode,
+        logisticsStatus: ifoodFailureCode,
+        observation: nextObservation,
+        updatedAt: addHours(new Date(), -3),
+      }),
+    );
+
+    this.logger.error(
+      `iFood recusou/falhou o cancelamento. DeliveryId: ${delivery.id}. OrderId: ${orderId}. Event: ${ifoodFailureCode}. A entrega foi mantida para rastreabilidade.`,
     );
   }
 

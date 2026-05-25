@@ -36,6 +36,9 @@ describe('IfoodAutoPollingService', () => {
     } as any;
     const deliveryService = {
       cancelDeliveryFromIfood: jest.fn().mockResolvedValue(undefined),
+      handleIfoodCancellationRequestFailed: jest
+        .fn()
+        .mockResolvedValue(undefined),
       finishDeliveryFromIfood: jest.fn().mockResolvedValue(undefined),
     } as any;
 
@@ -170,7 +173,7 @@ describe('IfoodAutoPollingService', () => {
     ]);
   });
 
-  it('deve cancelar entrega local também para evento CANCELLATION_REQUESTED', async () => {
+  it('não deve cancelar localmente para CANCELLATION_REQUESTED', async () => {
     const { service, deliveryService } = buildService({
       pollingResult: {
         events: [
@@ -189,14 +192,36 @@ describe('IfoodAutoPollingService', () => {
 
     await (service as any).runPollingCycle();
 
-    expect(deliveryService.cancelDeliveryFromIfood).toHaveBeenCalledWith(
-      'order-car',
+    expect(deliveryService.cancelDeliveryFromIfood).not.toHaveBeenCalled();
+  });
+
+  it('deve tratar CANCELLATION_REQUEST_FAILED sem cancelar localmente', async () => {
+    const { service, deliveryService } = buildService({
+      pollingResult: {
+        events: [
+          {
+            id: 'evt-crf',
+            orderId: 'order-crf',
+            code: 'CRF',
+            fullCode: 'CANCELLATION_REQUEST_FAILED',
+          },
+        ],
+        metadata: { maxMerchantsPerBatch: 1 },
+      },
+    });
+
+    await (service as any).runPollingCycle();
+
+    expect(
+      deliveryService.handleIfoodCancellationRequestFailed,
+    ).toHaveBeenCalledWith(
+      'order-crf',
       expect.objectContaining({
-        id: 'evt-car',
-        code: 'CAR',
-        fullCode: 'CANCELLATION_REQUESTED',
+        id: 'evt-crf',
+        fullCode: 'CANCELLATION_REQUEST_FAILED',
       }),
     );
+    expect(deliveryService.cancelDeliveryFromIfood).not.toHaveBeenCalled();
   });
 
   it('não deve alertar quando intervalo efetivo estiver dentro da tolerância de 2000ms', async () => {
