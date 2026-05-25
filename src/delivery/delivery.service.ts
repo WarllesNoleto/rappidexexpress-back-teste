@@ -830,16 +830,12 @@ export class DeliveryService implements OnModuleInit {
       }
     }
 
-    const ifoodLink = await this.ifoodOrderLinkService.findByDeliveryId(
-      deliveryFinded.id,
-    );
-    const isIfoodOrder = Boolean(ifoodLink?.ifoodOrderId);
-    const isObservationConfirmed =
-      deliveryData.destinationObservationConfirmed === true ||
-      changedDelivery.destinationObservationConfirmed === true;
-
     if (deliveryData.status === StatusDelivery.ARRIVED_AT_DESTINATION) {
-      if (isIfoodOrder && isObservationConfirmed) {
+      const ifoodLink = await this.ifoodOrderLinkService.findByDeliveryId(
+        deliveryFinded.id,
+      );
+
+      if (ifoodLink?.ifoodOrderId) {
         const canRequestCode =
           await this.ifoodEventService.hasDeliveryDropCodeRequested(
             ifoodLink.ifoodOrderId,
@@ -849,37 +845,6 @@ export class DeliveryService implements OnModuleInit {
           changedDelivery.status = StatusDelivery.AWAITING_CODE;
           deliveryData.status = StatusDelivery.AWAITING_CODE;
         }
-      }
-    }
-
-    if (
-      !deliveryData.status &&
-      isIfoodOrder &&
-      deliveryData.destinationObservationConfirmed === true &&
-      deliveryFinded.status === StatusDelivery.ARRIVED_AT_DESTINATION
-    ) {
-      const canRequestCode =
-        await this.ifoodEventService.hasDeliveryDropCodeRequested(
-          ifoodLink.ifoodOrderId,
-        );
-
-      if (canRequestCode) {
-        changedDelivery.status = StatusDelivery.AWAITING_CODE;
-        deliveryData.status = StatusDelivery.AWAITING_CODE;
-      }
-    }
-
-    if (deliveryData.status === StatusDelivery.AWAITING_CODE) {
-      if (!isIfoodOrder) {
-        throw new BadRequestException(
-          'Status AGUARDANDO_CODIGO é exclusivo para pedidos iFood.',
-        );
-      }
-
-      if (!isObservationConfirmed) {
-        throw new BadRequestException(
-          'Confirme a observação antes de avançar para AGUARDANDO_CODIGO.',
-        );
       }
     }
 
