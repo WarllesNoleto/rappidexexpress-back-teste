@@ -55,13 +55,6 @@ export class UpdateUserDto {
   @IsOptional()
   useIfoodIntegration?: boolean;
 
-  @IsBoolean()
-  @IsOptional()
-  usesExternalIfoodPdv?: boolean;
-  @IsBoolean()
-  @IsOptional()
-  usesExternalifoodPdv?: boolean;
-
   @IsString()
   @IsOptional()
   ifoodMerchantId?: string;
@@ -85,4 +78,16 @@ export class UpdateUserDto {
   @IsOptional()
   @IsNumber()
   ifoodOrdersAvailable?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  aiqfomeEnabled?: boolean;
+
+  @IsString()
+  @IsOptional()
+  aiqfomeStoreId?: string;
+
+  @IsString()
+  @IsOptional()
+  aiqfomeWebhookSecret?: string;
 }

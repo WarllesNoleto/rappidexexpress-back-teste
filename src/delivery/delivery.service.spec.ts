@@ -95,7 +95,7 @@ describe('DeliveryService', () => {
     expect(service).toBeDefined();
   });
 
-  it('deve sincronizar entregador a caminho da loja no status ONCOURSE', async () => {
+  it('deve executar sequência logística no status ONCOURSE', async () => {
     ifoodOrderLinkService.findByDeliveryId.mockResolvedValue({
       ifoodOrderId: 'ifood-1',
       merchantId: 'merchant-1',
@@ -135,7 +135,6 @@ describe('DeliveryService', () => {
         status: StatusDelivery.ONCOURSE,
         ifoodArrivedAtOriginSynced: false,
         ifoodDispatchSynced: false,
-        motoboy: { id: 'm2', name: 'Maria', phone: '11988888888' },
       },
       {},
       { status: StatusDelivery.COLLECTED },
@@ -145,37 +144,11 @@ describe('DeliveryService', () => {
       'ifood-2',
       'merchant-2',
     );
-    expect(ifoodOrdersService.assignDriver).toHaveBeenCalled();
-    expect(ifoodOrdersService.notifyGoingToOrigin).toHaveBeenCalled();
     expect(ifoodOrdersService.dispatchLogisticsOrder).toHaveBeenCalledWith(
       'ifood-2',
       'merchant-2',
     );
     expect(ifoodOrdersService.dispatchOrder).not.toHaveBeenCalled();
-  });
-
-  it('deve sincronizar chegada ao estabelecimento no status ARRIVED_AT_STORE sem despachar coleta', async () => {
-    ifoodOrderLinkService.findByDeliveryId.mockResolvedValue({
-      ifoodOrderId: 'ifood-8',
-      merchantId: 'merchant-8',
-    });
-
-    await (service as any).syncIfoodIfNeeded(
-      {
-        id: 'delivery-8',
-        status: StatusDelivery.ONCOURSE,
-        ifoodArrivedAtOriginSynced: false,
-        ifoodDispatchSynced: false,
-      },
-      {},
-      { status: StatusDelivery.ARRIVED_AT_STORE },
-    );
-
-    expect(ifoodOrdersService.notifyArrivedAtOrigin).toHaveBeenCalledWith(
-      'ifood-8',
-      'merchant-8',
-    );
-    expect(ifoodOrdersService.dispatchLogisticsOrder).not.toHaveBeenCalled();
   });
 
   it('deve validar código de entrega quando houver DELIVERY_DROP_CODE_REQUESTED', async () => {
@@ -221,87 +194,5 @@ describe('DeliveryService', () => {
         { status: StatusDelivery.FINISHED, deliveryCode: '9999' },
       ),
     ).rejects.toThrow('DELIVERY_DROP_CODE_REQUESTED');
-  });
-
-  it('deve finalizar localmente quando iFood já estiver concluído', async () => {
-    ifoodOrderLinkService.findByDeliveryId.mockResolvedValue({
-      ifoodOrderId: 'ifood-5',
-      merchantId: 'merchant-5',
-    });
-    ifoodEventService.hasDeliveryDropCodeRequested.mockResolvedValue(true);
-    ifoodOrdersService.verifyDeliveryCode.mockRejectedValue(
-      new Error('already delivered'),
-    );
-    ifoodOrdersService.getOrderDetails.mockResolvedValue({
-      orderStatus: 'CONCLUDED',
-    });
-
-    await expect(
-      (service as any).syncIfoodIfNeeded(
-        {
-          id: 'delivery-5',
-          status: StatusDelivery.AWAITING_CODE,
-          ifoodArrivedAtDestinationSynced: true,
-          establishment: { usesExternalIfoodPdv: true, name: 'Loja Teste' },
-        },
-        {},
-        { status: StatusDelivery.FINISHED, deliveryCode: '6013' },
-      ),
-    ).resolves.toEqual({});
-  });
-
-
-  it('deve finalizar localmente sem DELIVERY_DROP_CODE_REQUESTED quando iFood já estiver concluído', async () => {
-    ifoodOrderLinkService.findByDeliveryId.mockResolvedValue({
-      ifoodOrderId: 'ifood-7',
-      merchantId: 'merchant-7',
-    });
-    ifoodEventService.hasDeliveryDropCodeRequested.mockResolvedValue(false);
-    ifoodOrdersService.getOrderDetails.mockResolvedValue({
-      orderStatus: 'CONCLUDED',
-    });
-
-    await expect(
-      (service as any).syncIfoodIfNeeded(
-        {
-          id: 'delivery-7',
-          status: StatusDelivery.AWAITING_CODE,
-          ifoodArrivedAtDestinationSynced: true,
-        },
-        {},
-        { status: StatusDelivery.FINISHED, deliveryCode: '6013' },
-      ),
-    ).resolves.toEqual({});
-
-    expect(ifoodOrdersService.verifyDeliveryCode).not.toHaveBeenCalledWith(
-      'ifood-7',
-      '6013',
-      'merchant-7',
-    );
-  });
-
-  it('deve ser idempotente ao receber finalização de delivery já finalizado', async () => {
-    ifoodOrderLinkService.findByDeliveryId.mockResolvedValue({
-      ifoodOrderId: 'ifood-6',
-      merchantId: 'merchant-6',
-    });
-
-    await expect(
-      (service as any).syncIfoodIfNeeded(
-        {
-          id: 'delivery-6',
-          status: StatusDelivery.FINISHED,
-          ifoodArrivedAtDestinationSynced: true,
-        },
-        {},
-        { status: StatusDelivery.FINISHED, deliveryCode: '6013' },
-      ),
-    ).resolves.toEqual({});
-
-    expect(ifoodOrdersService.verifyDeliveryCode).not.toHaveBeenCalledWith(
-      'ifood-6',
-      '6013',
-      'merchant-6',
-    );
   });
 });

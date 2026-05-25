@@ -43,9 +43,6 @@ export class UserResult {
   useIfoodIntegration: boolean;
 
   @Expose()
-  usesExternalIfoodPdv: boolean;
-
-  @Expose()
   ifoodMerchantId?: string;
 
   @Expose()
@@ -60,11 +57,17 @@ export class UserResult {
   @Expose()
   ifoodOrdersAvailable: number;
 
+  @Expose()
+  aiqfomeEnabled: boolean;
+
+  @Expose()
+  aiqfomeStoreId?: string;
+
+  @Expose()
+  aiqfomeWebhookSecret?: string;
+
   public static fromEntity(user: UserEntity) {
-    return plainToClass<UserResult, UserResult>(UserResult, {
-      ...user,
-      usesExternalIfoodPdv: Boolean(user?.usesExternalIfoodPdv),
-    } as UserResult, {
+    return plainToClass<UserResult, UserResult>(UserResult, user, {
       excludeExtraneousValues: true,
     });
   }

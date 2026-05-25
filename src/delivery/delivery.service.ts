@@ -119,46 +119,11 @@ export class DeliveryService implements OnModuleInit {
         };
       }
 
-      if (deliveryData.status === StatusDelivery.ARRIVED_AT_STORE) {
+      if (deliveryData.status === StatusDelivery.COLLECTED) {
         if (!previousDelivery.ifoodArrivedAtOriginSynced) {
           await this.ifoodOrdersService.notifyArrivedAtOrigin(orderId, merchantId);
           this.logger.log(
             `arrivedAtOrigin enviado para iFood. OrderId: ${orderId}. MerchantId: ${merchantId}.`,
-          );
-        }
-
-        return {
-          ifoodArrivedAtOriginSynced: true,
-        };
-      }
-
-      if (deliveryData.status === StatusDelivery.COLLECTED) {
-        const motoboy = nextDelivery?.motoboy ?? previousDelivery?.motoboy;
-
-        if (!motoboy) {
-          throw new BadRequestException(
-            'Motoboy não encontrado para sincronizar a coleta ao iFood.',
-          );
-        }
-
-        if (!previousDelivery.ifoodAssignDriverSynced) {
-          await this.ifoodOrdersService.assignDriver(orderId, motoboy, merchantId);
-          this.logger.log(
-            `assignDriver enviado para iFood (na coleta). OrderId: ${orderId}. MerchantId: ${merchantId}.`,
-          );
-        }
-
-        if (!previousDelivery.ifoodGoingToOriginSynced) {
-          await this.ifoodOrdersService.notifyGoingToOrigin(orderId, merchantId);
-          this.logger.log(
-            `goingToOrigin enviado para iFood (na coleta). OrderId: ${orderId}. MerchantId: ${merchantId}.`,
-          );
-        }
-
-        if (!previousDelivery.ifoodArrivedAtOriginSynced) {
-          await this.ifoodOrdersService.notifyArrivedAtOrigin(orderId, merchantId);
-          this.logger.log(
-            `arrivedAtOrigin enviado para iFood (fallback em coleta). OrderId: ${orderId}. MerchantId: ${merchantId}.`,
           );
         }
 
@@ -170,8 +135,6 @@ export class DeliveryService implements OnModuleInit {
         }
 
         return {
-          ifoodAssignDriverSynced: true,
-          ifoodGoingToOriginSynced: true,
           ifoodArrivedAtOriginSynced: true,
           ifoodDispatchSynced: true,
         };
@@ -210,13 +173,6 @@ export class DeliveryService implements OnModuleInit {
       }
 
       if (deliveryData.status === StatusDelivery.FINISHED) {
-        if (previousDelivery.status === StatusDelivery.FINISHED) {
-          this.logger.log(
-            `Finalização idempotente no Rappidex. DeliveryId: ${previousDelivery.id}. IfoodOrderId: ${orderId}.`,
-          );
-          return {};
-        }
-
         if (
           !previousDelivery.ifoodArrivedAtDestinationSynced &&
           previousDelivery.status !== StatusDelivery.ARRIVED_AT_DESTINATION &&
@@ -241,23 +197,7 @@ export class DeliveryService implements OnModuleInit {
         const hasDeliveryDropCodeRequested =
           await this.ifoodEventService.hasDeliveryDropCodeRequested(orderId);
 
-        const usesExternalIfoodPdv = Boolean(
-          previousDelivery?.establishment?.usesExternalIfoodPdv,
-        );
-
         if (!hasDeliveryDropCodeRequested) {
-          const ifoodConclusionStatus = await this.getIfoodConclusionStatus(
-            orderId,
-            merchantId,
-          );
-
-          if (ifoodConclusionStatus.isConcluded) {
-            this.logger.warn(
-              `ifood_sync action=finalizado_localmente_sem_drop_code loja="${previousDelivery?.establishment?.name || ''}" merchantId="${merchantId || ''}" usesExternalIfoodPdv=${usesExternalIfoodPdv} ifoodOrderId="${orderId}" displayId="${previousDelivery?.id || ''}" ifoodStatus="${ifoodConclusionStatus.status}" localStatusBefore="${previousDelivery.status}" localStatusAfter="${StatusDelivery.FINISHED}"`,
-            );
-            return {};
-          }
-
           throw new BadRequestException(
             'O pedido ainda não está elegível para validação do código no iFood (DELIVERY_DROP_CODE_REQUESTED).',
           );
@@ -273,35 +213,15 @@ export class DeliveryService implements OnModuleInit {
           `verifyDeliveryCode enviado para iFood. OrderId: ${orderId}. MerchantId: ${merchantId}.`,
         );
 
-        let verifyResult: any;
-        try {
-          verifyResult = await this.ifoodOrdersService.verifyDeliveryCode(
-            orderId,
-            deliveryData.deliveryCode,
-            merchantId,
-          );
-        } catch (error: any) {
-          const usesExternalIfoodPdv = Boolean(
-            previousDelivery?.establishment?.usesExternalIfoodPdv,
-          );
-          const ifoodConclusionStatus = await this.getIfoodConclusionStatus(
-            orderId,
-            merchantId,
-          );
-
-          if (ifoodConclusionStatus.isConcluded) {
-            this.logger.warn(
-              `ifood_sync action=finalizado_localmente loja="${previousDelivery?.establishment?.name || ''}" merchantId="${merchantId || ''}" usesExternalIfoodPdv=${usesExternalIfoodPdv} ifoodOrderId="${orderId}" displayId="${previousDelivery?.id || ''}" ifoodStatus="${ifoodConclusionStatus.status}" localStatusBefore="${previousDelivery.status}" localStatusAfter="${StatusDelivery.FINISHED}"`,
-            );
-            return {};
-          }
-
-          throw error;
-        }
+        const verifyResult = await this.ifoodOrdersService.verifyDeliveryCode(
+          orderId,
+          deliveryData.deliveryCode,
+          merchantId,
+        );
 
         if (verifyResult?.success === false) {
           throw new BadRequestException(
-            'Código de entrega inválido.',
+            'O código de entrega do iFood é inválido.',
           );
         }
       }
@@ -349,42 +269,6 @@ export class DeliveryService implements OnModuleInit {
         `Não foi possível verificar o status do pedido iFood ${orderId} antes da finalização local. ${error?.message || error}`,
       );
       return false;
-    }
-  }
-
-  private async getIfoodConclusionStatus(
-    orderId: string,
-    merchantId?: string | null,
-  ) {
-    try {
-      const orderDetails = await this.ifoodOrdersService.getOrderDetails(
-        orderId,
-        merchantId,
-      );
-      const orderStatus = String(
-        orderDetails?.orderStatus ||
-          orderDetails?.status ||
-          orderDetails?.metadata?.status ||
-          '',
-      )
-        .trim()
-        .toUpperCase();
-
-      const isConcluded = [
-        'CONCLUDED',
-        'COMPLETED',
-        'DELIVERED',
-        'FINALIZED',
-        'ENTREGUE',
-        'CONCLUID',
-      ].some((statusToken) => orderStatus.includes(statusToken));
-
-      return { status: orderStatus || 'UNKNOWN', isConcluded };
-    } catch (error: any) {
-      this.logger.warn(
-        `Não foi possível consultar o status final do pedido iFood ${orderId}. ${error?.message || error}`,
-      );
-      return { status: 'UNKNOWN', isConcluded: false };
     }
   }
 
