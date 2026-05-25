@@ -93,9 +93,10 @@ export class DeliveryService implements OnModuleInit {
     const motoboy = nextDelivery?.motoboy || previousDelivery?.motoboy;
 
     if (!motoboy) {
-      throw new BadRequestException(
-        'Motoboy não encontrado para sincronizar ACAMINHO com o iFood.',
+      this.logger.warn(
+        `Não foi possível sincronizar ACAMINHO sem motoboy. DeliveryId: ${previousDelivery?.id}.`,
       );
+      return flags;
     }
 
     if (!previousDelivery.ifoodAssignDriverSynced) {
@@ -103,7 +104,7 @@ export class DeliveryService implements OnModuleInit {
       flags.ifoodAssignDriverSynced = true;
 
       this.logger.log(
-        `assignDriver enviado para iFood no ACAMINHO. OrderId: ${orderId}. MerchantId: ${merchantId}.`,
+        `assignDriver enviado ao iFood quando motoboy aceitou entrega. OrderId: ${orderId}. MerchantId: ${merchantId}.`,
       );
     }
 
@@ -112,7 +113,7 @@ export class DeliveryService implements OnModuleInit {
       flags.ifoodGoingToOriginSynced = true;
 
       this.logger.log(
-        `goingToOrigin enviado para iFood no ACAMINHO. OrderId: ${orderId}. MerchantId: ${merchantId}.`,
+        `goingToOrigin enviado ao iFood quando pedido ficou ACAMINHO. OrderId: ${orderId}. MerchantId: ${merchantId}.`,
       );
     }
 

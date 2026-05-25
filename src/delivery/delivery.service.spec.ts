@@ -123,6 +123,28 @@ describe('DeliveryService', () => {
     );
   });
 
+  it('não deve sincronizar ACAMINHO sem motoboy em pedido iFood', async () => {
+    ifoodOrderLinkService.findByDeliveryId.mockResolvedValue({
+      ifoodOrderId: 'ifood-10',
+      merchantId: 'merchant-10',
+    });
+
+    const result = await (service as any).syncIfoodIfNeeded(
+      {
+        id: 'delivery-10',
+        status: StatusDelivery.PENDING,
+        ifoodAssignDriverSynced: false,
+        ifoodGoingToOriginSynced: false,
+      },
+      {},
+      { status: StatusDelivery.ONCOURSE },
+    );
+
+    expect(result).toEqual({});
+    expect(ifoodOrdersService.assignDriver).not.toHaveBeenCalled();
+    expect(ifoodOrdersService.notifyGoingToOrigin).not.toHaveBeenCalled();
+  });
+
   it('deve executar apenas dispatch no status COLLECTED sem chamar arrivedAtOrigin', async () => {
     ifoodOrderLinkService.findByDeliveryId.mockResolvedValue({
       ifoodOrderId: 'ifood-2',
