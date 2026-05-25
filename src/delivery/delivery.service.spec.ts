@@ -148,6 +148,51 @@ describe('DeliveryService', () => {
     expect(ifoodOrdersService.dispatchOrder).not.toHaveBeenCalled();
   });
 
+  it('deve enviar arrivedAtOrigin no status ARRIVED_AT_STORE', async () => {
+    ifoodOrderLinkService.findByDeliveryId.mockResolvedValue({
+      ifoodOrderId: 'ifood-8',
+      merchantId: 'merchant-8',
+    });
+
+    await (service as any).syncIfoodIfNeeded(
+      {
+        id: 'delivery-8',
+        status: StatusDelivery.ONCOURSE,
+        ifoodArrivedAtOriginSynced: false,
+      },
+      {},
+      { status: StatusDelivery.ARRIVED_AT_STORE },
+    );
+
+    expect(ifoodOrdersService.notifyArrivedAtOrigin).toHaveBeenCalledWith(
+      'ifood-8',
+      'merchant-8',
+    );
+    expect(ifoodOrdersService.dispatchLogisticsOrder).not.toHaveBeenCalled();
+  });
+
+  it('deve enviar arrivedAtDestination no status ARRIVED_AT_DESTINATION', async () => {
+    ifoodOrderLinkService.findByDeliveryId.mockResolvedValue({
+      ifoodOrderId: 'ifood-9',
+      merchantId: 'merchant-9',
+    });
+
+    await (service as any).syncIfoodIfNeeded(
+      {
+        id: 'delivery-9',
+        status: StatusDelivery.COLLECTED,
+        ifoodArrivedAtDestinationSynced: false,
+      },
+      {},
+      { status: StatusDelivery.ARRIVED_AT_DESTINATION },
+    );
+
+    expect(ifoodOrdersService.notifyArrivedAtDestination).toHaveBeenCalledWith(
+      'ifood-9',
+      'merchant-9',
+    );
+  });
+
   it('deve validar código de entrega quando houver DELIVERY_DROP_CODE_REQUESTED', async () => {
     ifoodOrderLinkService.findByDeliveryId.mockResolvedValue({
       ifoodOrderId: 'ifood-3',
