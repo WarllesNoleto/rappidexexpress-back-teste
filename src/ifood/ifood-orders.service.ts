@@ -599,7 +599,7 @@ export class IfoodOrdersService {
       addressLatitude: fullAddressData.addressLatitude ?? undefined,
       addressLongitude: fullAddressData.addressLongitude ?? undefined,
       addressMapsUrl: fullAddressData.addressMapsUrl ?? undefined,
-      status: StatusDelivery.PENDING,
+      status: StatusDelivery.AWAITING_RELEASE,
       establishmentId,
       value: String(totalValue),
       payment: this.resolvePaymentType(order),

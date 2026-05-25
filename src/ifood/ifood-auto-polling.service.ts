@@ -150,8 +150,8 @@ export class IfoodAutoPollingService
       );
       const eligibleEvents = freshEvents.filter(
         (event) =>
-          event?.code === 'RTP' ||
-          event?.fullCode === 'READY_TO_PICKUP' ||
+          ['CONFIRMED','ORDER_CONFIRMED','PREPARATION_STARTED','SEPARATION_STARTED'].includes(String(event?.code||'').toUpperCase()) ||
+          ['CONFIRMED','ORDER_CONFIRMED','PREPARATION_STARTED','SEPARATION_STARTED'].includes(String(event?.fullCode||'').toUpperCase()) ||
           event?.code === 'DSP' ||
           event?.fullCode === 'DISPATCHED',
       );

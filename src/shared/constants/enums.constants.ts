@@ -15,6 +15,7 @@ export enum Permissions {
 }
 
 export enum StatusDelivery {
+  AWAITING_RELEASE = 'AGUARDANDO_LIBERACAO',
   PENDING = 'PENDENTE',
   ONCOURSE = 'ACAMINHO',
   ARRIVED_AT_STORE = 'CHEGOU_ESTABELECIMENTO',

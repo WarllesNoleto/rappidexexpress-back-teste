@@ -2,12 +2,12 @@ import { Column, Entity, Index, ObjectIdColumn } from 'typeorm';
 import { ObjectId } from 'mongodb';
 
 @Entity()
+@Index(['ifoodOrderId', 'merchantId'], { unique: true })
 export class IfoodOrderLinkEntity {
   @ObjectIdColumn()
   internalId: ObjectId;
 
   @Column()
-  @Index({ unique: true })
   ifoodOrderId: string;
 
   @Column()

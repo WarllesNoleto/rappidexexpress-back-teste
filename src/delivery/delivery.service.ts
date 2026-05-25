@@ -554,14 +554,19 @@ export class DeliveryService implements OnModuleInit {
 
     const assignedWhere = this.buildAssignedDeliveriesWhere(userForRequest);
 
-    const [pending, assigned] = await Promise.all([
+    const waitingReleaseWhere = this.buildDeliveriesWhere(userForRequest, {
+      status: StatusDelivery.AWAITING_RELEASE,
+    } as ListDeliveriesQueryDTO);
+    const [pending, assigned, waitingRelease] = await Promise.all([
       this.deliveryRepository.count(pendingWhere),
       this.deliveryRepository.count(assignedWhere),
+      this.deliveryRepository.count(waitingReleaseWhere),
     ]);
 
     return {
       pending,
       assigned,
+      waitingRelease,
     };
   }
 
@@ -1269,6 +1274,35 @@ export class DeliveryService implements OnModuleInit {
     );
   }
 
+  async releaseDelivery(deliveryId: string, user: UserRequest) {
+    const userFinded = await this.findOneUserById(user.id);
+    if (
+      ![UserType.ADMIN, UserType.SUPERADMIN, UserType.SHOPKEEPER, UserType.SHOPKEEPERADMIN].includes(
+        userFinded.type as any,
+      )
+    ) {
+      throw new UnauthorizedException('Você não tem permissão para liberar pedido.');
+    }
+    const delivery = await this.deliveryRepository.findOneByOrFail({ id: deliveryId });
+    if (delivery.status !== StatusDelivery.AWAITING_RELEASE) {
+      throw new BadRequestException('Entrega não está aguardando liberação.');
+    }
+    const updated = await this.deliveryRepository.save(
+      this.buildPersistableDelivery({
+        ...delivery,
+        status: StatusDelivery.PENDING,
+        releasedAt: addHours(new Date(), -3),
+        releasedBy: userFinded.id,
+        updatedAt: addHours(new Date(), -3),
+      }),
+    );
+    this.ordersGateway.emitDeliveryUpdated(
+      DeliveryResult.fromEntity(updated),
+      updated.establishment?.cityId,
+    );
+    return updated;
+  }
+
   async updateExternalIfoodStatus(orderId: string, event?: any) {
     const ifoodLink =
       await this.ifoodOrderLinkService.findByIfoodOrderId(orderId);
@@ -1364,6 +1398,12 @@ export class DeliveryService implements OnModuleInit {
       ifoodStatus: data.ifoodStatus ?? null,
       externalStatus: data.externalStatus ?? null,
       logisticsStatus: data.logisticsStatus ?? null,
+      ifoodImportedAt: data.ifoodImportedAt ?? null,
+      ifoodLastEventCode: data.ifoodLastEventCode ?? null,
+      ifoodLastEventFullCode: data.ifoodLastEventFullCode ?? null,
+      ifoodConfirmedAt: data.ifoodConfirmedAt ?? null,
+      releasedAt: data.releasedAt ?? null,
+      releasedBy: data.releasedBy ?? null,
       finishedAt: data.finishedAt ?? null,
       ifoodAssignDriverSynced: data.ifoodAssignDriverSynced ?? false,
       ifoodGoingToOriginSynced: data.ifoodGoingToOriginSynced ?? false,
@@ -1590,7 +1630,11 @@ export class DeliveryService implements OnModuleInit {
 
     if (userForRequest.type === UserType.MOTOBOY) {
       if (selectedStatuses.length) {
-        where['status'] = { $in: selectedStatuses };
+        where['status'] = {
+          $in: selectedStatuses.filter(
+            (status) => status !== StatusDelivery.AWAITING_RELEASE,
+          ),
+        };
 
         // Se tiver um momento em que for necessario que o motoboy solicite todos os pedidos, ele vai conseguir ver tudo
         if (!selectedStatuses.includes(StatusDelivery.PENDING)) {
@@ -1598,6 +1642,7 @@ export class DeliveryService implements OnModuleInit {
         }
       } else {
         where['motoboy.id'] = userForRequest.id;
+        where['status'] = { $ne: StatusDelivery.AWAITING_RELEASE };
       }
 
       if (queryParams.establishmentId)

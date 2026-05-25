@@ -20,6 +20,7 @@ export class ListDeliverysResult {
   dashboardCounts?: {
     pending: number;
     assigned: number;
+    waitingRelease: number;
   };
 
   static fromEntities(

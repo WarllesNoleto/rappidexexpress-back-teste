@@ -10,7 +10,10 @@ export class IfoodOrderLinkService {
     private readonly ifoodOrderLinkRepository: MongoRepository<IfoodOrderLinkEntity>,
   ) {}
 
-  async findByIfoodOrderId(ifoodOrderId: string) {
+  async findByIfoodOrderId(ifoodOrderId: string, merchantId?: string | null) {
+    if (merchantId) {
+      return this.ifoodOrderLinkRepository.findOneBy({ ifoodOrderId, merchantId });
+    }
     return this.ifoodOrderLinkRepository.findOneBy({ ifoodOrderId });
   }
 

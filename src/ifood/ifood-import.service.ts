@@ -8,6 +8,12 @@ import { IfoodReadinessService } from './ifood-readiness.service';
 @Injectable()
 export class IfoodImportService {
   private readonly logger = new Logger(IfoodImportService.name);
+  private static readonly IFOOD_IMPORT_EVENT_CODES = new Set([
+    'CONFIRMED',
+    'ORDER_CONFIRMED',
+    'PREPARATION_STARTED',
+    'SEPARATION_STARTED',
+  ]);
 
   constructor(
     private readonly deliveryService: DeliveryService,
@@ -25,13 +31,16 @@ export class IfoodImportService {
       return;
     }
 
-    const eligibleEvents = events.filter(
-      (event) =>
-        event?.code === 'RTP' ||
-        event?.fullCode === 'READY_TO_PICKUP' ||
-        event?.code === 'DSP' ||
-        event?.fullCode === 'DISPATCHED',
-    );
+    const eligibleEvents = events.filter((event) => {
+      const code = String(event?.code || '').toUpperCase();
+      const fullCode = String(event?.fullCode || '').toUpperCase();
+      return (
+        IfoodImportService.IFOOD_IMPORT_EVENT_CODES.has(code) ||
+        IfoodImportService.IFOOD_IMPORT_EVENT_CODES.has(fullCode) ||
+        code === 'DSP' ||
+        fullCode === 'DISPATCHED'
+      );
+    });
 
     if (eligibleEvents.length === 0) {
       this.logger.log(
@@ -52,13 +61,13 @@ export class IfoodImportService {
       const orderId = eventReference?.orderId;
       const merchantId = eventReference?.merchantId ?? null;
       try {
-        const existingLink =
-          await this.ifoodOrderLinkService.findByIfoodOrderId(orderId);
+        const existingLink = await this.ifoodOrderLinkService.findByIfoodOrderId(
+          orderId,
+          merchantId,
+        );
 
         if (existingLink) {
-          this.logger.log(
-            `Importação automática: pedido ${orderId} já importado. DeliveryId ${existingLink.deliveryId}`,
-          );
+          this.logger.log(`ifood_event action=duplicate_ignored orderId=${orderId}`);
           continue;
         }
 
@@ -125,9 +134,7 @@ export class IfoodImportService {
           shopkeeperId: targetShopkeeperId,
         });
 
-        this.logger.log(
-          `Importação automática: pedido ${orderId} importado com sucesso após evento RTP/DSP. DeliveryId ${createdDelivery.id}`,
-        );
+        this.logger.log(`ifood_event action=imported orderId=${orderId} displayId=${order?.displayId ?? ''}`);
       } catch (error: any) {
         this.logger.error(
           `Importação automática: erro ao processar pedido ${orderId}: ${error?.message || error}`,

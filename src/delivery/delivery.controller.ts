@@ -82,6 +82,15 @@ export class DeliveryController {
     );
   }
 
+  @Put(':deliveryId/release')
+  @UseGuards(JwtAuthGuard)
+  async releaseDelivery(
+    @Param() param: DeliveryParamsDto,
+    @User() user: UserRequest,
+  ) {
+    return await this.deliveryService.releaseDelivery(param.deliveryId, user);
+  }
+
   @Get()
   @ApiOperation({
     operationId: 'ListDelivery',

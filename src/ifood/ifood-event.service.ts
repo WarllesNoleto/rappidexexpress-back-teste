@@ -34,8 +34,10 @@ export class IfoodEventService {
     const events = await this.ifoodEventRepository.find({
       where: {
         $or: [
-          { code: 'RTP' },
-          { fullCode: 'READY_TO_PICKUP' },
+          { code: 'CONFIRMED' },
+          { fullCode: 'ORDER_CONFIRMED' },
+          { fullCode: 'PREPARATION_STARTED' },
+          { fullCode: 'SEPARATION_STARTED' },
           { code: 'DSP' },
           { fullCode: 'DISPATCHED' },
         ],
