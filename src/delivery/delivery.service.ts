@@ -866,6 +866,23 @@ export class DeliveryService implements OnModuleInit {
       }
     }
 
+    if (this.isObservationOnlyUpdate(deliveryData)) {
+      const deliveryUpdated = await this.deliveryRepository.save(
+        this.buildPersistableDelivery({
+          ...changedDelivery,
+          updatedAt: addHours(new Date(), -3),
+        }),
+      );
+
+      this.ordersGateway.emitDeliveryUpdated(
+        DeliveryResult.fromEntity(deliveryUpdated),
+        deliveryUpdated.establishment?.cityId ??
+          deliveryFinded.establishment?.cityId,
+      );
+
+      return DeliveryResult.fromEntity(deliveryUpdated);
+    }
+
     const isPendingClaimAttempt = this.isPendingClaimAttempt(
       deliveryFinded,
       deliveryData,
@@ -1021,6 +1038,20 @@ export class DeliveryService implements OnModuleInit {
 
     const normalized = String(motoboyId).trim();
     return normalized.length ? normalized : null;
+  }
+
+  private isObservationOnlyUpdate(data: UpdateDeliveryDto) {
+    const allowedKeys = new Set([
+      'destinationObservation',
+      'destinationObservationConfirmed',
+      'updatedAt',
+    ]);
+
+    const payloadKeys = Object.keys(data || {}).filter(
+      (key) => (data as any)[key] !== undefined,
+    );
+
+    return payloadKeys.length > 0 && payloadKeys.every((key) => allowedKeys.has(key));
   }
 
   async createDelivery(
