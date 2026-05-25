@@ -55,16 +55,30 @@ export class DeliveryService implements OnModuleInit {
     private readonly ifoodEventService: IfoodEventService,
   ) {}
 
+
+  private async syncIfoodOnCourseIfNeeded(
+    previousDelivery: DeliveryEntity,
+    nextDelivery: DeliveryEntity,
+  ) {
+    return this.syncIfoodIfNeeded(
+      previousDelivery,
+      nextDelivery,
+      { status: StatusDelivery.ONCOURSE } as UpdateDeliveryDto,
+    );
+  }
+
   private async syncIfoodIfNeeded(
     previousDelivery: DeliveryEntity,
     nextDelivery: DeliveryEntity,
     deliveryData: UpdateDeliveryDto,
   ): Promise<Partial<Record<'ifoodAssignDriverSynced' | 'ifoodGoingToOriginSynced' | 'ifoodArrivedAtOriginSynced' | 'ifoodDispatchSynced' | 'ifoodArrivedAtDestinationSynced', boolean>>> {
-    if (!deliveryData.status) {
+    const nextStatus = deliveryData.status || nextDelivery?.status;
+
+    if (!nextStatus) {
       return {};
     }
 
-    if (previousDelivery.status === deliveryData.status) {
+    if (previousDelivery.status === nextStatus) {
       return {};
     }
 
@@ -91,7 +105,7 @@ export class DeliveryService implements OnModuleInit {
     }
 
     try {
-      if (deliveryData.status === StatusDelivery.ONCOURSE) {
+      if (nextStatus === StatusDelivery.ONCOURSE) {
         const motoboy = nextDelivery?.motoboy;
 
         if (!motoboy) {
@@ -120,7 +134,7 @@ export class DeliveryService implements OnModuleInit {
         };
       }
 
-      if (deliveryData.status === StatusDelivery.ARRIVED_AT_STORE) {
+      if (nextStatus === StatusDelivery.ARRIVED_AT_STORE) {
         if (!previousDelivery.ifoodArrivedAtOriginSynced) {
           await this.ifoodOrdersService.notifyArrivedAtOrigin(orderId, merchantId);
           this.logger.log(
@@ -133,7 +147,7 @@ export class DeliveryService implements OnModuleInit {
         };
       }
 
-      if (deliveryData.status === StatusDelivery.COLLECTED) {
+      if (nextStatus === StatusDelivery.COLLECTED) {
         if (!previousDelivery.ifoodDispatchSynced) {
           await this.ifoodOrdersService.dispatchLogisticsOrder(orderId, merchantId);
           this.logger.log(
@@ -147,8 +161,8 @@ export class DeliveryService implements OnModuleInit {
       }
 
       if (
-        deliveryData.status === StatusDelivery.ARRIVED_AT_DESTINATION ||
-        deliveryData.status === StatusDelivery.AWAITING_CODE
+        nextStatus === StatusDelivery.ARRIVED_AT_DESTINATION ||
+        nextStatus === StatusDelivery.AWAITING_CODE
       ) {
         if (!previousDelivery.ifoodArrivedAtDestinationSynced) {
           await this.ifoodOrdersService.notifyArrivedAtDestination(
@@ -162,7 +176,7 @@ export class DeliveryService implements OnModuleInit {
         return { ifoodArrivedAtDestinationSynced: true };
       }
 
-      if (deliveryData.status === StatusDelivery.CANCELED) {
+      if (nextStatus === StatusDelivery.CANCELED) {
         try {
           const cancellationResult =
             await this.ifoodOrdersService.requestCancellation(
@@ -188,7 +202,7 @@ export class DeliveryService implements OnModuleInit {
         return {};
       }
 
-      if (deliveryData.status === StatusDelivery.FINISHED) {
+      if (nextStatus === StatusDelivery.FINISHED) {
         if (previousDelivery.status === StatusDelivery.FINISHED) {
           this.logger.log(
             `Finalização idempotente no Rappidex. DeliveryId: ${previousDelivery.id}. IfoodOrderId: ${orderId}.`,
@@ -800,11 +814,14 @@ export class DeliveryService implements OnModuleInit {
       let ifoodSyncFlags = {};
 
       try {
-        ifoodSyncFlags = await this.syncIfoodIfNeeded(
-          deliveryFinded,
-          deliveryUpdated,
-          deliveryData,
-        );
+        ifoodSyncFlags =
+          deliveryUpdated.status === StatusDelivery.ONCOURSE
+            ? await this.syncIfoodOnCourseIfNeeded(deliveryFinded, deliveryUpdated)
+            : await this.syncIfoodIfNeeded(
+                deliveryFinded,
+                deliveryUpdated,
+                deliveryData,
+              );
       } catch (error: any) {
         this.logger.error(
           `Claim atômico concluído para delivery ${deliveryFinded.id}, mas falhou sincronização iFood no fluxo PENDENTE -> ACAMINHO. Iniciando rollback condicional para PENDENTE.`,
@@ -837,11 +854,17 @@ export class DeliveryService implements OnModuleInit {
       let ifoodSyncFlags = {};
 
       if (!shouldSyncInBackground) {
-        ifoodSyncFlags = await this.syncIfoodIfNeeded(
-          deliveryFinded,
-          deliveryForSync as DeliveryEntity,
-          deliveryData,
-        );
+        ifoodSyncFlags =
+          (deliveryForSync as DeliveryEntity).status === StatusDelivery.ONCOURSE
+            ? await this.syncIfoodOnCourseIfNeeded(
+                deliveryFinded,
+                deliveryForSync as DeliveryEntity,
+              )
+            : await this.syncIfoodIfNeeded(
+                deliveryFinded,
+                deliveryForSync as DeliveryEntity,
+                deliveryData,
+              );
       }
 
       try {
@@ -1412,10 +1435,9 @@ export class DeliveryService implements OnModuleInit {
 
     const ifoodLink = await this.ifoodOrderLinkService.findByDeliveryId(delivery.id);
     if (ifoodLink && nextStatus === StatusDelivery.ONCOURSE && motoboy) {
-      const syncFlags = await this.syncIfoodIfNeeded(
+      const syncFlags = await this.syncIfoodOnCourseIfNeeded(
         delivery,
         updated,
-        { status: StatusDelivery.ONCOURSE } as UpdateDeliveryDto,
       );
 
       if (Object.keys(syncFlags).length > 0) {
