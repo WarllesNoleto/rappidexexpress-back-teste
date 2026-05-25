@@ -632,6 +632,7 @@ export class DeliveryService implements OnModuleInit {
 
     let establishmentFinded;
     let motoboyFinded;
+    const normalizedMotoboyId = this.normalizeMotoboyId(deliveryData.motoboyId);
 
     let changedDelivery: Record<string, any> = {};
 
@@ -648,8 +649,8 @@ export class DeliveryService implements OnModuleInit {
         this.ensureCityAccess(userFinded, establishmentFinded.cityId);
       }
 
-      if (deliveryData.motoboyId) {
-        motoboyFinded = await this.findOneUserById(deliveryData.motoboyId);
+      if (normalizedMotoboyId) {
+        motoboyFinded = await this.findOneUserById(normalizedMotoboyId);
         this.ensureCityAccess(userFinded, motoboyFinded.cityId);
       }
     }
@@ -672,14 +673,14 @@ export class DeliveryService implements OnModuleInit {
 
       if (
         deliveryData.status === StatusDelivery.ONCOURSE &&
-        !deliveryData.motoboyId
+        !normalizedMotoboyId
       ) {
         throw new BadRequestException(
           'É necessario que você selecione a opção de motoboy.',
         );
       }
 
-      if (deliveryData.motoboyId) {
+      if (normalizedMotoboyId) {
         const where = {};
         where['motoboy.id'] = userFinded.id;
         where['isActive'] = true;
@@ -718,6 +719,17 @@ export class DeliveryService implements OnModuleInit {
         ...changedDelivery,
         motoboy: motoboyFinded,
       };
+    }
+
+    if (normalizedMotoboyId && !deliveryData.status) {
+      const canAutoAssignStatus =
+        deliveryFinded.status === StatusDelivery.PENDING ||
+        deliveryFinded.status === StatusDelivery.AWAITING_RELEASE;
+
+      if (canAutoAssignStatus) {
+        changedDelivery.status = StatusDelivery.ONCOURSE;
+        changedDelivery['onCoursedAt'] = addHours(new Date(), -3);
+      }
     }
 
     if (deliveryData.status === StatusDelivery.ARRIVED_AT_DESTINATION) {
@@ -892,6 +904,16 @@ export class DeliveryService implements OnModuleInit {
     return DeliveryResult.fromEntity(deliveryUpdated);
   }
 
+
+  private normalizeMotoboyId(motoboyId?: string | null) {
+    if (motoboyId === undefined || motoboyId === null) {
+      return null;
+    }
+
+    const normalized = String(motoboyId).trim();
+    return normalized.length ? normalized : null;
+  }
+
   async createDelivery(
     deliveryData: CreateDeliveryDto,
     user: UserRequest,
@@ -951,13 +973,15 @@ export class DeliveryService implements OnModuleInit {
       );
     }
 
+    const normalizedMotoboyId = this.normalizeMotoboyId(deliveryData.motoboyId);
+
     if (
       (userFinded.type === UserType.ADMIN ||
         userFinded.type === UserType.SUPERADMIN ||
         userFinded.type === UserType.SHOPKEEPERADMIN) &&
-      deliveryData.motoboyId
+      normalizedMotoboyId
     ) {
-      motoboy = await this.findOneUserById(deliveryData.motoboyId);
+      motoboy = await this.findOneUserById(normalizedMotoboyId);
       this.ensureCityAccess(userFinded, motoboy.cityId);
       deliveryStatus = StatusDelivery.ONCOURSE;
       onCoursedAt = addHours(new Date(), -3);
@@ -1356,7 +1380,7 @@ export class DeliveryService implements OnModuleInit {
     return (
       delivery.status === StatusDelivery.PENDING &&
       deliveryData.status === StatusDelivery.ONCOURSE &&
-      !!deliveryData.motoboyId
+      !!this.normalizeMotoboyId(deliveryData.motoboyId)
     );
   }
 
