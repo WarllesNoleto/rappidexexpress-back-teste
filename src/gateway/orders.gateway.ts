@@ -44,9 +44,13 @@ export class OrdersGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     if (!cityId) return;
     client.join(`city:${cityId}`);
+    this.logger.log(`socket_join_city socketId=${client.id} room=city:${cityId}`);
   }
 
   emitDeliveryCreated(delivery: DeliveryResult, cityId?: string) {
+    this.logger.log(
+      `ws_emit event=delivery:created deliveryId=${delivery?.id} status=${delivery?.status} room=${cityId ? `city:${cityId}` : 'broadcast'}`,
+    );
     if (cityId) {
       this.server.to(`city:${cityId}`).emit('delivery:created', delivery);
       return;
@@ -56,6 +60,9 @@ export class OrdersGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   emitDeliveryUpdated(delivery: DeliveryResult, cityId?: string) {
+    this.logger.log(
+      `ws_emit event=delivery:updated deliveryId=${delivery?.id} status=${delivery?.status} room=${cityId ? `city:${cityId}` : 'broadcast'}`,
+    );
     if (cityId) {
       this.server.to(`city:${cityId}`).emit('delivery:updated', delivery);
       return;
@@ -66,6 +73,9 @@ export class OrdersGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   emitDeliveryDeleted(deliveryId: string, cityId?: string) {
     const payload = { id: deliveryId };
+    this.logger.log(
+      `ws_emit event=delivery:deleted deliveryId=${deliveryId} room=${cityId ? `city:${cityId}` : 'broadcast'}`,
+    );
 
     if (cityId) {
       this.server.to(`city:${cityId}`).emit('delivery:deleted', payload);

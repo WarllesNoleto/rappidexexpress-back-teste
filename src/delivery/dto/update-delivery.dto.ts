@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
 import {
   StatusDelivery,
   PaymentType,
@@ -40,6 +40,14 @@ export class UpdateDeliveryDto {
   @IsString()
   @IsOptional()
   observation?: string;
+
+  @IsString()
+  @IsOptional()
+  destinationObservation?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  destinationObservationConfirmed?: boolean;
 
   @IsString()
   @IsOptional()

@@ -18,6 +18,37 @@ export class DeliveryResult {
   @Expose()
   clientLocation?: string;
 
+
+  @Expose()
+  clientAddress?: string;
+
+  @Expose()
+  addressComplement?: string;
+
+  @Expose()
+  addressReference?: string;
+
+  @Expose()
+  addressNeighborhood?: string;
+
+  @Expose()
+  addressCity?: string;
+
+  @Expose()
+  addressState?: string;
+
+  @Expose()
+  addressZipCode?: string;
+
+  @Expose()
+  addressLatitude?: number;
+
+  @Expose()
+  addressLongitude?: number;
+
+  @Expose()
+  addressMapsUrl?: string;
+
   @Expose()
   status: StatusDelivery;
 
@@ -61,6 +92,12 @@ export class DeliveryResult {
   observation: string;
 
   @Expose()
+  destinationObservation?: string;
+
+  @Expose()
+  destinationObservationConfirmed?: boolean;
+
+  @Expose()
   payment: PaymentType;
 
   @Expose()
@@ -99,12 +136,24 @@ export class DeliveryResult {
   @Expose()
   isIfoodOrder?: boolean;
 
+  @Expose()
+  ifoodOrderId?: string;
+
+  @Expose()
+  ifoodDisplayId?: string;
+
+  @Expose()
+  ifoodMerchantId?: string;
+
   public static fromEntity(delivery: DeliveryEntity) {
     return plainToClass<DeliveryResult, DeliveryResult>(
       DeliveryResult,
       {
         ...delivery,
         isIfoodOrder: (delivery as any).isIfoodOrder ?? false,
+        ifoodOrderId: (delivery as any).ifoodOrderId ?? null,
+        ifoodDisplayId: (delivery as any).ifoodDisplayId ?? null,
+        ifoodMerchantId: (delivery as any).ifoodMerchantId ?? null,
         establishmentId: delivery.establishment
           ? delivery.establishment.id
           : null,

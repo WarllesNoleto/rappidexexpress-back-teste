@@ -8,9 +8,11 @@ import {
   LogEntity,
   CityEntity,
 } from '../database/entities';
+import { IfoodModule } from '../ifood/ifood.module';
 
 @Module({
   imports: [
+    IfoodModule,
     TypeOrmModule.forFeature([UserEntity, DeliveryEntity, LogEntity, CityEntity]),
   ],
   controllers: [UserController],

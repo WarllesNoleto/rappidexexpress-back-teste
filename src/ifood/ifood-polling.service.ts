@@ -304,6 +304,7 @@ export class IfoodPollingService {
       where: {
         useIfoodIntegration: true,
         isActive: true,
+        ifoodMerchantId: { $nin: [null, ''] },
       } as any,
     });
 
@@ -321,7 +322,22 @@ export class IfoodPollingService {
       .map((item) => item.trim())
       .filter(Boolean);
 
-    return Array.from(new Set(merchants));
+    const uniqueMerchants = Array.from(new Set(merchants));
+    this.logger.log(
+      `ifood_polling_merchants_resolved dbActive=${usersWithIfoodIntegration.length} pollingMerchants=${uniqueMerchants.length} merchants=[${uniqueMerchants
+        .map((merchantId) => this.maskMerchantId(merchantId))
+        .join(', ')}]`,
+    );
+
+    return uniqueMerchants;
+  }
+  
+  private maskMerchantId(merchantId?: string) {
+    const normalized = String(merchantId || '').trim();
+    if (!normalized) {
+      return 'n/a';
+    }
+    return `***${normalized.slice(-4)}`;
   }
 
   private chunkMerchants(merchants: string[], chunkSize: number) {

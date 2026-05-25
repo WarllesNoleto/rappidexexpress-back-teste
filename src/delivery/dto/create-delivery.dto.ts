@@ -15,6 +15,45 @@ export class CreateDeliveryDto {
   @IsOptional()
   clientLocation?: string;
 
+
+  @IsString()
+  @IsOptional()
+  clientAddress?: string;
+
+  @IsString()
+  @IsOptional()
+  addressComplement?: string;
+
+  @IsString()
+  @IsOptional()
+  addressReference?: string;
+
+  @IsString()
+  @IsOptional()
+  addressNeighborhood?: string;
+
+  @IsString()
+  @IsOptional()
+  addressCity?: string;
+
+  @IsString()
+  @IsOptional()
+  addressState?: string;
+
+  @IsString()
+  @IsOptional()
+  addressZipCode?: string;
+
+  @IsOptional()
+  addressLatitude?: number;
+
+  @IsOptional()
+  addressLongitude?: number;
+
+  @IsString()
+  @IsOptional()
+  addressMapsUrl?: string;
+
   @IsEnum(StatusDelivery)
   status: StatusDelivery;
 

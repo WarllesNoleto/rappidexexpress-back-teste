@@ -24,6 +24,37 @@ export class DeliveryEntity {
   @Column({ nullable: true })
   clientLocation?: string;
 
+
+  @Column({ nullable: true })
+  clientAddress?: string;
+
+  @Column({ nullable: true })
+  addressComplement?: string;
+
+  @Column({ nullable: true })
+  addressReference?: string;
+
+  @Column({ nullable: true })
+  addressNeighborhood?: string;
+
+  @Column({ nullable: true })
+  addressCity?: string;
+
+  @Column({ nullable: true })
+  addressState?: string;
+
+  @Column({ nullable: true })
+  addressZipCode?: string;
+
+  @Column({ nullable: true })
+  addressLatitude?: number;
+
+  @Column({ nullable: true })
+  addressLongitude?: number;
+
+  @Column({ nullable: true })
+  addressMapsUrl?: string;
+
   @Column({ type: 'enum', enum: StatusDelivery })
   status: StatusDelivery;
 
@@ -38,6 +69,12 @@ export class DeliveryEntity {
 
   @Column()
   observation: string;
+
+  @Column({ nullable: true })
+  destinationObservation?: string;
+
+  @Column({ default: false })
+  destinationObservationConfirmed?: boolean;
 
   @Column()
   soda: string;
@@ -68,22 +105,6 @@ export class DeliveryEntity {
 
   @Column({ nullable: true })
   ifoodStatus?: string;
-
-
-  @Column({ nullable: true })
-  source?: 'manual' | 'ifood' | 'aiqfome';
-
-  @Column({ nullable: true })
-  aiqfomeOrderId?: string;
-
-  @Column({ nullable: true })
-  aiqfomeStoreId?: string;
-
-  @Column({ nullable: true })
-  externalOrderId?: string;
-
-  @Column({ nullable: true })
-  externalPlatform?: string;
 
   @Column({ nullable: true })
   externalStatus?: string;

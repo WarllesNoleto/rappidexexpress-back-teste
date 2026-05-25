@@ -148,6 +148,13 @@ export class IfoodAutoPollingService
       this.logger.log(
         `Eventos pendentes de ACK neste ciclo: ${pendingAckEvents.length}`,
       );
+      const eligibleEvents = freshEvents.filter(
+        (event) =>
+          event?.code === 'RTP' ||
+          event?.fullCode === 'READY_TO_PICKUP' ||
+          event?.code === 'DSP' ||
+          event?.fullCode === 'DISPATCHED',
+      );
 
       if (polledAckTargets.length > 0) {
         await this.ackWithDeadlineAndFallback(polledAckTargets);
@@ -226,6 +233,17 @@ export class IfoodAutoPollingService
           await this.ifoodEventService.markAsProcessed(event, true);
         }
       }
+
+      const uniqueMerchants = Array.from(
+        new Set(
+          allEvents
+            .map((event) => String(event?.merchantId || '').trim())
+            .filter(Boolean),
+        ),
+      );
+      this.logger.log(
+        `ifood_polling merchants=${uniqueMerchants.length} events=${allEvents.length} eligible=${eligibleEvents.length} imported=${eligibleEvents.length} ignored=${Math.max(freshEvents.length - eligibleEvents.length, 0)} merchantIds=[${uniqueMerchants.join(',')}]`,
+      );
 
       this.logObservabilitySnapshot();
     } catch (error: any) {

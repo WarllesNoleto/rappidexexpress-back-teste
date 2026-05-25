@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { MongoRepository } from 'typeorm';
@@ -26,6 +27,7 @@ import {
 import { StatusDelivery, UserType } from '../shared/constants/enums.constants';
 import { UserRequest } from '../shared/interfaces';
 import { addHours } from 'date-fns';
+import { IfoodImportService } from '../ifood/ifood-import.service';
 
 type MotoboyDeliverySummary = {
   name: string;
@@ -35,6 +37,7 @@ type MotoboyDeliverySummary = {
 
 @Injectable()
 export class UserService {
+  private readonly logger = new Logger(UserService.name);
   constructor(
     @InjectRepository(UserEntity)
     private readonly userRepository: MongoRepository<UserEntity>,
@@ -44,6 +47,7 @@ export class UserService {
     private readonly logRepository: MongoRepository<LogEntity>,
     @InjectRepository(CityEntity)
     private readonly cityRepository: MongoRepository<CityEntity>,
+    private readonly ifoodImportService: IfoodImportService,
   ) {}
 
   async createUser(
@@ -71,12 +75,12 @@ export class UserService {
 
     const city = await this.resolveCity(data.cityId, requester);
     const useIfoodIntegration = Boolean(data.useIfoodIntegration);
+    const usesExternalIfoodPdv = useIfoodIntegration
+      ? Boolean(data.usesExternalIfoodPdv)
+      : false;
     const ifoodMerchantId = useIfoodIntegration
       ? (data.ifoodMerchantId?.trim() ?? '')
       : '';
-    const aiqfomeEnabled = Boolean(data.aiqfomeEnabled);
-    const aiqfomeStoreId = aiqfomeEnabled ? (data.aiqfomeStoreId?.trim() ?? '') : '';
-    const aiqfomeWebhookSecret = aiqfomeEnabled ? (data.aiqfomeWebhookSecret?.trim() ?? '') : '';
 
     try {
       const newUser = await this.userRepository.save({
@@ -86,20 +90,25 @@ export class UserService {
         phone,
         password: passHash,
         useIfoodIntegration,
+        usesExternalIfoodPdv,
         ifoodMerchantId,
         ifoodClientId: '',
         ifoodClientSecret: '',
         ifoodOrdersReleased: Number(data.ifoodOrdersReleased || 0),
         ifoodOrdersUsed: Number(data.ifoodOrdersUsed || 0),
         ifoodOrdersAvailable: Number(data.ifoodOrdersAvailable || 0),
-        aiqfomeEnabled,
-        aiqfomeStoreId,
-        aiqfomeWebhookSecret,
-        aiqfomeIntegrationStatus: aiqfomeEnabled ? 'connected' : 'not_configured',
         isActive: true,
         createdAt: addHours(new Date(), -3),
         updatedAt: addHours(new Date(), -3),
       });
+
+      this.triggerIfoodInitialSync(newUser, {
+        useIfoodIntegrationChanged: true,
+        ifoodMerchantIdChanged: true,
+        isActiveChanged: true,
+        usesExternalIfoodPdvChanged: true,
+      });
+
       return UserResult.fromEntity(newUser);
     } catch (error) {
       throw error;
@@ -196,17 +205,12 @@ export class UserService {
     try {
       const useIfoodIntegration =
         data.useIfoodIntegration ?? userToUpdate.useIfoodIntegration ?? false;
+      const usesExternalIfoodPdv = useIfoodIntegration
+        ? (data.usesExternalIfoodPdv ?? userToUpdate.usesExternalIfoodPdv ?? false)
+        : false;
 
       const ifoodMerchantId = useIfoodIntegration
         ? (data.ifoodMerchantId ?? userToUpdate.ifoodMerchantId ?? '').trim()
-        : '';
-      const aiqfomeEnabled =
-        data.aiqfomeEnabled ?? userToUpdate.aiqfomeEnabled ?? false;
-      const aiqfomeStoreId = aiqfomeEnabled
-        ? (data.aiqfomeStoreId ?? userToUpdate.aiqfomeStoreId ?? '').trim()
-        : '';
-      const aiqfomeWebhookSecret = aiqfomeEnabled
-        ? (data.aiqfomeWebhookSecret ?? userToUpdate.aiqfomeWebhookSecret ?? '').trim()
         : '';
 
       const changedUser = await this.userRepository.save({
@@ -214,6 +218,7 @@ export class UserService {
         ...data,
         cityId,
         useIfoodIntegration,
+        usesExternalIfoodPdv,
         ifoodMerchantId,
         ifoodClientId: '',
         ifoodClientSecret: '',
@@ -223,16 +228,73 @@ export class UserService {
           data.ifoodOrdersUsed ?? userToUpdate.ifoodOrdersUsed ?? 0,
         ifoodOrdersAvailable:
           data.ifoodOrdersAvailable ?? userToUpdate.ifoodOrdersAvailable ?? 0,
-        aiqfomeEnabled,
-        aiqfomeStoreId,
-        aiqfomeWebhookSecret,
-        aiqfomeIntegrationStatus: aiqfomeEnabled ? 'connected' : 'not_configured',
         updatedAt: addHours(new Date(), -3),
       });
+
+      this.triggerIfoodInitialSync(changedUser, {
+        useIfoodIntegrationChanged:
+          useIfoodIntegration !== Boolean(userToUpdate.useIfoodIntegration),
+        ifoodMerchantIdChanged:
+          ifoodMerchantId !== String(userToUpdate.ifoodMerchantId || '').trim(),
+        isActiveChanged:
+          Boolean(changedUser.isActive) !== Boolean(userToUpdate.isActive),
+        usesExternalIfoodPdvChanged:
+          usesExternalIfoodPdv !== Boolean(userToUpdate.usesExternalIfoodPdv),
+      });
+
       return UserResult.fromEntity(changedUser);
     } catch (error) {
       throw error;
     }
+  }
+
+  private triggerIfoodInitialSync(
+    company: UserEntity,
+    changes: {
+      useIfoodIntegrationChanged: boolean;
+      ifoodMerchantIdChanged: boolean;
+      isActiveChanged: boolean;
+      usesExternalIfoodPdvChanged: boolean;
+    },
+  ) {
+    const hasRelevantChange =
+      changes.useIfoodIntegrationChanged ||
+      changes.ifoodMerchantIdChanged ||
+      changes.isActiveChanged ||
+      changes.usesExternalIfoodPdvChanged;
+
+    if (!hasRelevantChange) {
+      return;
+    }
+
+    if (
+      !company.useIfoodIntegration ||
+      !company.isActive ||
+      !String(company.ifoodMerchantId || '').trim()
+    ) {
+      return;
+    }
+
+    this.ifoodImportService
+      .retryPendingImportsForCompany(company.id)
+      .then(() =>
+        this.logger.log(
+          `ifood_initial_sync_triggered companyId=${company.id} merchant=${this.maskMerchantId(company.ifoodMerchantId)}`,
+        ),
+      )
+      .catch((error) =>
+        this.logger.error(
+          `ifood_initial_sync_failed companyId=${company.id} merchant=${this.maskMerchantId(company.ifoodMerchantId)} error=${error?.message || error}`,
+        ),
+      );
+  }
+
+  private maskMerchantId(merchantId?: string) {
+    const normalized = String(merchantId || '').trim();
+    if (!normalized) {
+      return 'n/a';
+    }
+    return `***${normalized.slice(-4)}`;
   }
 
   private ensureCityAccess(requester: UserEntity, resourceCityId: string) {

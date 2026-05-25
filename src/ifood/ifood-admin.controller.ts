@@ -23,6 +23,9 @@ import { IfoodOrdersService } from './ifood-orders.service';
 import { IfoodPollingService } from './ifood-polling.service';
 import { IfoodImportService } from './ifood-import.service';
 import { IfoodReadinessService } from './ifood-readiness.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { MongoRepository } from 'typeorm';
+import { UserEntity } from '../database/entities';
 
 @Controller('ifood')
 export class IfoodAdminController {
@@ -36,6 +39,8 @@ export class IfoodAdminController {
     private readonly ifoodOrderLinkService: IfoodOrderLinkService,
     private readonly ifoodReadinessService: IfoodReadinessService,
     private readonly ifoodCreditsService: IfoodCreditsService,
+    @InjectRepository(UserEntity)
+    private readonly userRepository: MongoRepository<UserEntity>,
   ) {}
 
   private ensureDebugRoutesEnabled() {
@@ -287,5 +292,41 @@ export class IfoodAdminController {
       user,
       body.reason,
     );
+  }
+
+  @Post('sync-company/:companyId')
+  @UseGuards(JwtAuthGuard)
+  async syncCompanyIfood(
+    @Param('companyId') companyId: string,
+    @User() user: UserRequest,
+  ) {
+    if (!onlyForAdmin(user.type)) {
+      throw new UnauthorizedException(
+        'Você não tem permissão para esse recurso.',
+      );
+    }
+
+    const company = await this.userRepository.findOneBy({ id: companyId });
+
+    if (!company) {
+      throw new BadRequestException('Empresa não encontrada.');
+    }
+
+    if (!company.useIfoodIntegration || !company.isActive) {
+      throw new BadRequestException('A integração iFood não está ativa para esta loja.');
+    }
+
+    const merchantId = String(company.ifoodMerchantId || '').trim();
+    if (!merchantId) {
+      throw new BadRequestException('ifoodMerchantId não configurado para esta loja.');
+    }
+
+    await this.ifoodImportService.retryPendingImportsForCompany(companyId);
+
+    return {
+      companyId,
+      merchantId,
+      message: 'Sincronização iFood iniciada para esta loja',
+    };
   }
 }

@@ -113,6 +113,10 @@ export class IfoodImportService {
           { creditOrderId: orderId },
         );
 
+        this.logger.log(
+          `ifood_import_created orderId=${orderId} deliveryId=${createdDelivery.id} shopkeeperId=${targetShopkeeperId}`,
+        );
+
         await this.ifoodOrderLinkService.createLink({
           ifoodOrderId: orderId,
           ifoodDisplayId: order?.displayId ?? orderId,

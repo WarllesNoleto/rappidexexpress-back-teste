@@ -173,6 +173,13 @@ export class DeliveryService implements OnModuleInit {
       }
 
       if (deliveryData.status === StatusDelivery.FINISHED) {
+        if (previousDelivery.status === StatusDelivery.FINISHED) {
+          this.logger.log(
+            `Finalização idempotente no Rappidex. DeliveryId: ${previousDelivery.id}. IfoodOrderId: ${orderId}.`,
+          );
+          return {};
+        }
+
         if (
           !previousDelivery.ifoodArrivedAtDestinationSynced &&
           previousDelivery.status !== StatusDelivery.ARRIVED_AT_DESTINATION &&
@@ -197,7 +204,23 @@ export class DeliveryService implements OnModuleInit {
         const hasDeliveryDropCodeRequested =
           await this.ifoodEventService.hasDeliveryDropCodeRequested(orderId);
 
+        const usesExternalIfoodPdv = Boolean(
+          previousDelivery?.establishment?.usesExternalIfoodPdv,
+        );
+
         if (!hasDeliveryDropCodeRequested) {
+          const ifoodConclusionStatus = await this.getIfoodConclusionStatus(
+            orderId,
+            merchantId,
+          );
+
+          if (ifoodConclusionStatus.isConcluded) {
+            this.logger.warn(
+              `ifood_sync action=finalizado_localmente_sem_drop_code loja="${previousDelivery?.establishment?.name || ''}" merchantId="${merchantId || ''}" usesExternalIfoodPdv=${usesExternalIfoodPdv} ifoodOrderId="${orderId}" displayId="${previousDelivery?.id || ''}" ifoodStatus="${ifoodConclusionStatus.status}" localStatusBefore="${previousDelivery.status}" localStatusAfter="${StatusDelivery.FINISHED}"`,
+            );
+            return {};
+          }
+
           throw new BadRequestException(
             'O pedido ainda não está elegível para validação do código no iFood (DELIVERY_DROP_CODE_REQUESTED).',
           );
@@ -213,15 +236,35 @@ export class DeliveryService implements OnModuleInit {
           `verifyDeliveryCode enviado para iFood. OrderId: ${orderId}. MerchantId: ${merchantId}.`,
         );
 
-        const verifyResult = await this.ifoodOrdersService.verifyDeliveryCode(
-          orderId,
-          deliveryData.deliveryCode,
-          merchantId,
-        );
+        let verifyResult: any;
+        try {
+          verifyResult = await this.ifoodOrdersService.verifyDeliveryCode(
+            orderId,
+            deliveryData.deliveryCode,
+            merchantId,
+          );
+        } catch (error: any) {
+          const usesExternalIfoodPdv = Boolean(
+            previousDelivery?.establishment?.usesExternalIfoodPdv,
+          );
+          const ifoodConclusionStatus = await this.getIfoodConclusionStatus(
+            orderId,
+            merchantId,
+          );
+
+          if (ifoodConclusionStatus.isConcluded) {
+            this.logger.warn(
+              `ifood_sync action=finalizado_localmente loja="${previousDelivery?.establishment?.name || ''}" merchantId="${merchantId || ''}" usesExternalIfoodPdv=${usesExternalIfoodPdv} ifoodOrderId="${orderId}" displayId="${previousDelivery?.id || ''}" ifoodStatus="${ifoodConclusionStatus.status}" localStatusBefore="${previousDelivery.status}" localStatusAfter="${StatusDelivery.FINISHED}"`,
+            );
+            return {};
+          }
+
+          throw error;
+        }
 
         if (verifyResult?.success === false) {
           throw new BadRequestException(
-            'O código de entrega do iFood é inválido.',
+            'Código de entrega inválido.',
           );
         }
       }
@@ -269,6 +312,42 @@ export class DeliveryService implements OnModuleInit {
         `Não foi possível verificar o status do pedido iFood ${orderId} antes da finalização local. ${error?.message || error}`,
       );
       return false;
+    }
+  }
+
+  private async getIfoodConclusionStatus(
+    orderId: string,
+    merchantId?: string | null,
+  ) {
+    try {
+      const orderDetails = await this.ifoodOrdersService.getOrderDetails(
+        orderId,
+        merchantId,
+      );
+      const orderStatus = String(
+        orderDetails?.orderStatus ||
+          orderDetails?.status ||
+          orderDetails?.metadata?.status ||
+          '',
+      )
+        .trim()
+        .toUpperCase();
+
+      const isConcluded = [
+        'CONCLUDED',
+        'COMPLETED',
+        'DELIVERED',
+        'FINALIZED',
+        'ENTREGUE',
+        'CONCLUID',
+      ].some((statusToken) => orderStatus.includes(statusToken));
+
+      return { status: orderStatus || 'UNKNOWN', isConcluded };
+    } catch (error: any) {
+      this.logger.warn(
+        `Não foi possível consultar o status final do pedido iFood ${orderId}. ${error?.message || error}`,
+      );
+      return { status: 'UNKNOWN', isConcluded: false };
     }
   }
 
@@ -411,6 +490,11 @@ export class DeliveryService implements OnModuleInit {
     const skip = (queryParams.page - 1) * queryParams.itemsPerPage;
     const take = queryParams.itemsPerPage;
     const where = this.buildDeliveriesWhere(userForRequest, queryParams);
+    this.logger.log(
+      `delivery_list userId=${userForRequest.id} userType=${userForRequest.type} userCityId=${userForRequest.cityId} filters=${JSON.stringify(
+        queryParams,
+      )} where=${JSON.stringify(where)}`,
+    );
 
     const shouldIncludeDashboardCounts = this.parseBooleanQuery(
       queryParams.includeDashboardCounts,
@@ -433,13 +517,20 @@ export class DeliveryService implements OnModuleInit {
     const ifoodLinks = await this.ifoodOrderLinkService.findByDeliveryIds(
       deliveries.map((delivery) => delivery.id),
     );
-    const ifoodDeliveryIds = new Set(
-      ifoodLinks.map((ifoodLink) => ifoodLink.deliveryId),
+    const ifoodLinkByDeliveryId = new Map(
+      ifoodLinks.map((link) => [link.deliveryId, link]),
     );
-    const deliveriesWithSource = deliveries.map((delivery) => ({
-      ...delivery,
-      isIfoodOrder: ifoodDeliveryIds.has(delivery.id),
-    }));
+    const deliveriesWithSource = deliveries.map((delivery) => {
+      const ifoodLink = ifoodLinkByDeliveryId.get(delivery.id);
+
+      return {
+        ...delivery,
+        isIfoodOrder: Boolean(ifoodLink),
+        ifoodOrderId: ifoodLink?.ifoodOrderId ?? null,
+        ifoodDisplayId: ifoodLink?.ifoodDisplayId ?? null,
+        ifoodMerchantId: ifoodLink?.merchantId ?? null,
+      };
+    });
 
     return ListDeliverysResult.fromEntities(
       deliveriesWithSource as any,
@@ -461,9 +552,7 @@ export class DeliveryService implements OnModuleInit {
       status: StatusDelivery.PENDING,
     } as ListDeliveriesQueryDTO);
 
-    const assignedWhere = this.buildDeliveriesWhere(userForRequest, {
-      status: `${StatusDelivery.ONCOURSE},${StatusDelivery.ARRIVED_AT_STORE},${StatusDelivery.COLLECTED},${StatusDelivery.ARRIVED_AT_DESTINATION},${StatusDelivery.AWAITING_CODE}`,
-    } as ListDeliveriesQueryDTO);
+    const assignedWhere = this.buildAssignedDeliveriesWhere(userForRequest);
 
     const [pending, assigned] = await Promise.all([
       this.deliveryRepository.count(pendingWhere),
@@ -474,6 +563,36 @@ export class DeliveryService implements OnModuleInit {
       pending,
       assigned,
     };
+  }
+
+
+  private buildAssignedDeliveriesWhere(userForRequest: UserEntity) {
+    const where: Record<string, any> = {
+      isActive: true,
+      motoboy: { $ne: null },
+      status: {
+        $nin: [StatusDelivery.FINISHED, StatusDelivery.CANCELED],
+      },
+    };
+
+    if (userForRequest.type !== UserType.SUPERADMIN) {
+      where['establishment.cityId'] = userForRequest.cityId;
+    } else if (userForRequest.cityId) {
+      where['establishment.cityId'] = userForRequest.cityId;
+    }
+
+    if (userForRequest.type === UserType.MOTOBOY) {
+      where['motoboy.id'] = userForRequest.id;
+    }
+
+    if (
+      userForRequest.type === UserType.SHOPKEEPER ||
+      userForRequest.type === UserType.SHOPKEEPERADMIN
+    ) {
+      where['establishment.id'] = userForRequest.id;
+    }
+
+    return where;
   }
 
   private parseBooleanQuery(value?: boolean | string) {
@@ -785,6 +904,17 @@ export class DeliveryService implements OnModuleInit {
       payment,
       soda,
       observation,
+      clientLocation,
+      clientAddress,
+      addressComplement,
+      addressReference,
+      addressNeighborhood,
+      addressCity,
+      addressState,
+      addressZipCode,
+      addressLatitude,
+      addressLongitude,
+      addressMapsUrl,
     } = deliveryData;
 
     let deliveryStatus = status;
@@ -808,6 +938,12 @@ export class DeliveryService implements OnModuleInit {
       this.ensureCityAccess(userFinded, establishment.cityId);
     } else {
       establishment = userFinded;
+    }
+
+    if (!establishment?.cityId) {
+      throw new BadRequestException(
+        'Estabelecimento sem cidade configurada. Verifique cityId/cityName.',
+      );
     }
 
     if (
@@ -843,6 +979,17 @@ export class DeliveryService implements OnModuleInit {
         payment,
         soda,
         observation,
+        clientLocation,
+        clientAddress,
+        addressComplement,
+        addressReference,
+        addressNeighborhood,
+        addressCity,
+        addressState,
+        addressZipCode,
+        addressLatitude,
+        addressLongitude,
+        addressMapsUrl,
         isActive: true,
         createdBy: user.id,
         onCoursedAt,
@@ -853,6 +1000,9 @@ export class DeliveryService implements OnModuleInit {
       this.ordersGateway.emitDeliveryCreated(
         DeliveryResult.fromEntity(newDelivery),
         newDelivery.establishment?.cityId,
+      );
+      this.logger.log(
+        `delivery_created id=${newDelivery.id} status=${newDelivery.status} cityId=${newDelivery.establishment?.cityId} cityName=${newDelivery.establishment?.cityName ?? ''} createdBy=${newDelivery.createdBy}`,
       );
       
       this.notifyNewDeliveryInBackground(
@@ -1182,11 +1332,25 @@ export class DeliveryService implements OnModuleInit {
       id: data.id,
       clientName: data.clientName,
       clientPhone: data.clientPhone,
+      clientLocation: data.clientLocation ?? null,
+      clientAddress: data.clientAddress ?? null,
+      addressComplement: data.addressComplement ?? null,
+      addressReference: data.addressReference ?? null,
+      addressNeighborhood: data.addressNeighborhood ?? null,
+      addressCity: data.addressCity ?? null,
+      addressState: data.addressState ?? null,
+      addressZipCode: data.addressZipCode ?? null,
+      addressLatitude: data.addressLatitude ?? null,
+      addressLongitude: data.addressLongitude ?? null,
+      addressMapsUrl: data.addressMapsUrl ?? null,
       status: data.status,
       establishment: data.establishment ?? null,
       motoboy: data.motoboy ?? null,
       value: data.value,
       observation: data.observation,
+      destinationObservation: data.destinationObservation ?? null,
+      destinationObservationConfirmed:
+        data.destinationObservationConfirmed ?? false,
       soda: data.soda,
       payment: data.payment,
       isActive: data.isActive,
@@ -1407,7 +1571,11 @@ export class DeliveryService implements OnModuleInit {
       isActive: includeCanceled ? { $in: [true, false] } : true,
     };
 
-    where['establishment.cityId'] = userForRequest.cityId;
+    if (userForRequest.type !== UserType.SUPERADMIN) {
+      where['establishment.cityId'] = userForRequest.cityId;
+    } else if (userForRequest.cityId) {
+      where['establishment.cityId'] = userForRequest.cityId;
+    }
 
     if (
       userForRequest.type === UserType.ADMIN ||
@@ -1453,11 +1621,11 @@ export class DeliveryService implements OnModuleInit {
     if (queryParams.createdIn && queryParams.createdUntil) {
       const createdAtDateFilter = {
         $gte: new Date(queryParams.createdIn),
-        $lt: new Date(queryParams.createdUntil),
+        $lte: new Date(queryParams.createdUntil),
       };
       const createdAtStringFilter = {
         $gte: queryParams.createdIn,
-        $lt: queryParams.createdUntil,
+        $lte: queryParams.createdUntil,
       };
 
       // Garante compatibilidade: aceita registros Date (novos) e string (legados).
