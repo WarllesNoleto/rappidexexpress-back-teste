@@ -34,16 +34,13 @@ export class IfoodOrdersService {
     });
 
     try {
-      const response = await this.ifoodHttpService.request(
-        'order_details',
-        {
-          method: 'GET',
-          url: `https://merchant-api.ifood.com.br/logistics/v1.0/orders/${orderId}`,
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
+      const response = await this.ifoodHttpService.request('order_details', {
+        method: 'GET',
+        url: `https://merchant-api.ifood.com.br/logistics/v1.0/orders/${orderId}`,
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
         },
-      );
+      });
 
       return response.data;
     } catch (error: any) {
@@ -68,18 +65,15 @@ export class IfoodOrdersService {
     });
 
     try {
-      await this.ifoodHttpService.request(
-        'order_dispatch',
-        {
-          method: 'POST',
-          url: `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/dispatch`,
-          data: {},
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
+      await this.ifoodHttpService.request('order_dispatch', {
+        method: 'POST',
+        url: `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/dispatch`,
+        data: {},
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
         },
-      );
+      });
 
       this.logger.log(
         `Dispatch do pedido enviado ao iFood com sucesso. OrderId: ${orderId}`,
@@ -116,22 +110,19 @@ export class IfoodOrdersService {
     });
 
     try {
-      await this.ifoodHttpService.request(
-        'logistics_assign_driver',
-        {
-          method: 'POST',
-          url: `https://merchant-api.ifood.com.br/logistics/v1.0/orders/${orderId}/assignDriver`,
-          data: {
-            workerName: motoboy?.name || 'Motoboy Rappidex',
-            workerPhone: this.normalizePhone(motoboy?.phone || ''),
-            workerVehicleType: 'MOTORCYCLE',
-          },
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
+      await this.ifoodHttpService.request('logistics_assign_driver', {
+        method: 'POST',
+        url: `https://merchant-api.ifood.com.br/logistics/v1.0/orders/${orderId}/assignDriver`,
+        data: {
+          workerName: motoboy?.name || 'Motoboy Rappidex',
+          workerPhone: this.normalizePhone(motoboy?.phone || ''),
+          workerVehicleType: 'MOTORCYCLE',
         },
-      );
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
       this.logger.log(
         `Entregador vinculado ao pedido no iFood. OrderId: ${orderId}`,
@@ -337,10 +328,7 @@ export class IfoodOrdersService {
       'IFOOD_DEFAULT_CANCELLATION_CODE',
     );
 
-    const selectedReason = this.pickCancellationReason(
-      reasons,
-      preferredCode,
-    );
+    const selectedReason = this.pickCancellationReason(reasons, preferredCode);
 
     if (!selectedReason) {
       return {
@@ -356,21 +344,18 @@ export class IfoodOrdersService {
     });
 
     try {
-      await this.ifoodHttpService.request(
-        'order_request_cancellation',
-        {
-          method: 'POST',
-          url: `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/requestCancellation`,
-          data: {
-            reason,
-            cancellationCode: selectedReason.rawCode,
-          },
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
+      await this.ifoodHttpService.request('order_request_cancellation', {
+        method: 'POST',
+        url: `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/requestCancellation`,
+        data: {
+          reason,
+          cancellationCode: selectedReason.rawCode,
         },
-      );
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
       this.logger.warn(
         `Solicitação de cancelamento enviada ao iFood. OrderId: ${orderId}. Código: ${selectedReason.code}`,
@@ -417,7 +402,6 @@ export class IfoodOrdersService {
       );
     }
   }
-
 
   private isOrderInTerminalState(status: number | undefined, data: any) {
     if (![400, 404, 409, 410, 422].includes(Number(status))) {
@@ -493,7 +477,9 @@ export class IfoodOrdersService {
 
     const isDelivery = orderType === 'DELIVERY';
     const isMerchantDelivery = deliveredBy === 'MERCHANT';
-    const normalizedStatus = String(orderStatus || '').trim().toUpperCase();
+    const normalizedStatus = String(orderStatus || '')
+      .trim()
+      .toUpperCase();
     const terminalStatuses = new Set(['CONCLUDED', 'CANCELLED']);
     const isTerminalStatus = terminalStatuses.has(normalizedStatus);
 
@@ -511,7 +497,8 @@ export class IfoodOrdersService {
         customerName: order?.customer?.name ?? null,
         customerPhone: order?.customer?.phone?.number ?? null,
       },
-      canCreateRappidexDelivery: isDelivery && isMerchantDelivery && !isTerminalStatus,
+      canCreateRappidexDelivery:
+        isDelivery && isMerchantDelivery && !isTerminalStatus,
       reason: isTerminalStatus
         ? `Pedido já está finalizado no iFood com status ${normalizedStatus}.`
         : isDelivery && isMerchantDelivery
@@ -562,9 +549,9 @@ export class IfoodOrdersService {
       0;
 
     const fullAddressData = this.buildIfoodFullAddress(order);
-    const deliveryAddress = fullAddressData.clientAddress || fullAddressData.fullAddress;
     const deliveryLocationLink =
-      fullAddressData.addressMapsUrl || this.buildIfoodDeliveryLocationLink(order);
+      fullAddressData.addressMapsUrl ||
+      this.buildIfoodDeliveryLocationLink(order);
 
     this.logger.log(
       `ifood_address_import orderId=${orderId} displayId=${displayId} complete=${Boolean(fullAddressData.fullAddress && fullAddressData.clientAddress)}`,
@@ -572,7 +559,9 @@ export class IfoodOrdersService {
 
     const observation = [
       `Pedido iFood #${displayId}`,
-      fullAddressData.fullAddress ? `Endereço: ${fullAddressData.fullAddress}` : null,
+      fullAddressData.fullAddress
+        ? `Endereço: ${fullAddressData.fullAddress}`
+        : null,
       deliveryLocationLink ? `Localização: ${deliveryLocationLink}` : null,
       localizer ? `Localizador: ${localizer}` : null,
       order?.delivery?.observations
@@ -608,7 +597,6 @@ export class IfoodOrdersService {
     };
   }
 
-
   private buildIfoodFullAddress(order: any) {
     const addr = order?.delivery?.deliveryAddress || {};
 
@@ -629,14 +617,15 @@ export class IfoodOrdersService {
 
     const latitude = Number(addr?.coordinates?.latitude);
     const longitude = Number(addr?.coordinates?.longitude);
-    const hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude);
+    const hasCoordinates =
+      Number.isFinite(latitude) && Number.isFinite(longitude);
 
     const mapsUrl = hasCoordinates
       ? `https://www.google.com/maps?q=${latitude},${longitude}`
       : this.buildGoogleMapsLinkByAddress(streetLine || cityLine || null);
 
     return {
-      clientAddress: lines.join(", ") || streetLine || null,
+      clientAddress: lines.join(', ') || streetLine || null,
       addressComplement: addr?.complement || null,
       addressReference: addr?.reference || null,
       addressNeighborhood: addr?.neighborhood || null,
@@ -661,7 +650,9 @@ export class IfoodOrdersService {
   }
 
   private buildIfoodDeliveryLocationLink(order: any): string | null {
-    const latitude = Number(order?.delivery?.deliveryAddress?.coordinates?.latitude);
+    const latitude = Number(
+      order?.delivery?.deliveryAddress?.coordinates?.latitude,
+    );
     const longitude = Number(
       order?.delivery?.deliveryAddress?.coordinates?.longitude,
     );
@@ -681,7 +672,7 @@ export class IfoodOrdersService {
 
     return this.buildGoogleMapsLinkByAddress(deliveryAddress);
   }
-  
+
   async resolveTargetShopkeeperId(
     merchantId?: string | null,
   ): Promise<string | null> {
@@ -763,18 +754,15 @@ export class IfoodOrdersService {
     });
 
     try {
-      await this.ifoodHttpService.request(
-        `logistics_${endpoint}`,
-        {
-          method: 'POST',
-          url: `https://merchant-api.ifood.com.br/logistics/v1.0/orders/${orderId}/${endpoint}`,
-          data: {},
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
+      await this.ifoodHttpService.request(`logistics_${endpoint}`, {
+        method: 'POST',
+        url: `https://merchant-api.ifood.com.br/logistics/v1.0/orders/${orderId}/${endpoint}`,
+        data: {},
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
         },
-      );
+      });
 
       this.logger.log(
         `${actionLabel} enviada ao iFood com sucesso. OrderId: ${orderId}`,

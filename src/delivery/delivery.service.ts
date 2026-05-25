@@ -71,11 +71,23 @@ export class DeliveryService implements OnModuleInit {
     merchantId: string,
   ): Promise<
     Partial<
-      Record<'ifoodAssignDriverSynced' | 'ifoodGoingToOriginSynced', boolean>
+      Record<
+        | 'ifoodAssignDriverSynced'
+        | 'ifoodGoingToOriginSynced'
+        | 'ifoodArrivedAtOriginSynced'
+        | 'ifoodDispatchSynced',
+        boolean
+      >
     >
   > {
     const flags: Partial<
-      Record<'ifoodAssignDriverSynced' | 'ifoodGoingToOriginSynced', boolean>
+      Record<
+        | 'ifoodAssignDriverSynced'
+        | 'ifoodGoingToOriginSynced'
+        | 'ifoodArrivedAtOriginSynced'
+        | 'ifoodDispatchSynced',
+        boolean
+      >
     > = {};
 
     const motoboy = nextDelivery?.motoboy || previousDelivery?.motoboy;
@@ -465,6 +477,7 @@ export class DeliveryService implements OnModuleInit {
   }
 
   private shouldSyncIfoodInBackground(status?: StatusDelivery) {
+    void status;
     return false;
   }
 
