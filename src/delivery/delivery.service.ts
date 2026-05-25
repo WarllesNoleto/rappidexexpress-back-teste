@@ -120,7 +120,7 @@ export class DeliveryService implements OnModuleInit {
         };
       }
 
-      if (deliveryData.status === StatusDelivery.COLLECTED) {
+      if (deliveryData.status === StatusDelivery.ARRIVED_AT_STORE) {
         if (!previousDelivery.ifoodArrivedAtOriginSynced) {
           await this.ifoodOrdersService.notifyArrivedAtOrigin(orderId, merchantId);
           this.logger.log(
@@ -128,6 +128,12 @@ export class DeliveryService implements OnModuleInit {
           );
         }
 
+        return {
+          ifoodArrivedAtOriginSynced: true,
+        };
+      }
+
+      if (deliveryData.status === StatusDelivery.COLLECTED) {
         if (!previousDelivery.ifoodDispatchSynced) {
           await this.ifoodOrdersService.dispatchLogisticsOrder(orderId, merchantId);
           this.logger.log(
@@ -136,7 +142,6 @@ export class DeliveryService implements OnModuleInit {
         }
 
         return {
-          ifoodArrivedAtOriginSynced: true,
           ifoodDispatchSynced: true,
         };
       }
@@ -768,14 +773,11 @@ export class DeliveryService implements OnModuleInit {
         changedDelivery['arrivedAtStoreAt'] = dateForUse;
       } else if (deliveryData.status === StatusDelivery.COLLECTED) {
         changedDelivery['collectedAt'] = dateForUse;
-        changedDelivery['ifoodArrivedAtOriginSynced'] = true;
-        changedDelivery['ifoodDispatchSynced'] = true;
       } else if (
         deliveryData.status === StatusDelivery.ARRIVED_AT_DESTINATION ||
         deliveryData.status === StatusDelivery.AWAITING_CODE
       ) {
         changedDelivery['arrivedAtDestinationAt'] = dateForUse;
-        changedDelivery['ifoodArrivedAtDestinationSynced'] = true;
       } else if (deliveryData.status === StatusDelivery.FINISHED) {
         changedDelivery['finishedAt'] = dateForUse;
       }
@@ -1407,6 +1409,21 @@ export class DeliveryService implements OnModuleInit {
         updatedAt: addHours(new Date(), -3),
       }),
     );
+
+    const ifoodLink = await this.ifoodOrderLinkService.findByDeliveryId(delivery.id);
+    if (ifoodLink && nextStatus === StatusDelivery.ONCOURSE && motoboy) {
+      const syncFlags = await this.syncIfoodIfNeeded(
+        delivery,
+        updated,
+        { status: StatusDelivery.ONCOURSE } as UpdateDeliveryDto,
+      );
+
+      if (Object.keys(syncFlags).length > 0) {
+        await this.saveIfoodSyncFlags(updated.id, syncFlags);
+        Object.assign(updated, syncFlags);
+      }
+    }
+
     this.ordersGateway.emitDeliveryUpdated(
       DeliveryResult.fromEntity(updated),
       updated.establishment?.cityId,
