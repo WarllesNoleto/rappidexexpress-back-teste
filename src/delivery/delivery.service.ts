@@ -21,6 +21,7 @@ import {
   ListDeliveriesQueryDTO,
   ListDeliverysResult,
   UpdateDeliveryDto,
+  ReleaseDeliveryDto,
 } from './dto';
 import { UserRequest } from '../shared/interfaces';
 import { StatusDelivery, UserType } from '../shared/constants/enums.constants';
@@ -733,8 +734,7 @@ export class DeliveryService implements OnModuleInit {
 
     if (normalizedMotoboyId && !deliveryData.status) {
       const canAutoAssignStatus =
-        deliveryFinded.status === StatusDelivery.PENDING ||
-        deliveryFinded.status === StatusDelivery.AWAITING_RELEASE;
+        deliveryFinded.status === StatusDelivery.PENDING;
 
       if (canAutoAssignStatus) {
         changedDelivery.status = StatusDelivery.ONCOURSE;
@@ -1353,7 +1353,11 @@ export class DeliveryService implements OnModuleInit {
     );
   }
 
-  async releaseDelivery(deliveryId: string, user: UserRequest) {
+  async releaseDelivery(
+    deliveryId: string,
+    user: UserRequest,
+    data?: ReleaseDeliveryDto,
+  ) {
     const userFinded = await this.findOneUserById(user.id);
     if (
       ![UserType.ADMIN, UserType.SUPERADMIN, UserType.SHOPKEEPER, UserType.SHOPKEEPERADMIN].includes(
@@ -1366,10 +1370,26 @@ export class DeliveryService implements OnModuleInit {
     if (delivery.status !== StatusDelivery.AWAITING_RELEASE) {
       throw new BadRequestException('Entrega não está aguardando liberação.');
     }
+
+    const normalizedMotoboyId = this.normalizeMotoboyId(data?.motoboyId);
+    let motoboy = null;
+    let nextStatus = StatusDelivery.PENDING;
+    let onCoursedAt = delivery.onCoursedAt;
+
+    if (normalizedMotoboyId) {
+      motoboy = await this.findOneUserById(normalizedMotoboyId);
+      this.ensureCityAccess(userFinded, motoboy.cityId);
+
+      nextStatus = StatusDelivery.ONCOURSE;
+      onCoursedAt = addHours(new Date(), -3);
+    }
+
     const updated = await this.deliveryRepository.save(
       this.buildPersistableDelivery({
         ...delivery,
-        status: StatusDelivery.PENDING,
+        status: nextStatus,
+        motoboy,
+        onCoursedAt,
         releasedAt: addHours(new Date(), -3),
         releasedBy: userFinded.id,
         updatedAt: addHours(new Date(), -3),
@@ -1379,7 +1399,7 @@ export class DeliveryService implements OnModuleInit {
       DeliveryResult.fromEntity(updated),
       updated.establishment?.cityId,
     );
-    return updated;
+    return DeliveryResult.fromEntity(updated);
   }
 
   async updateExternalIfoodStatus(orderId: string, event?: any) {
