@@ -1371,7 +1371,9 @@ export class DeliveryService implements OnModuleInit {
       throw new BadRequestException('Entrega não está aguardando liberação.');
     }
 
-    const normalizedMotoboyId = this.normalizeMotoboyId(data?.motoboyId);
+    const normalizedMotoboyId = this.normalizeMotoboyId(
+      data?.motoboyId ?? delivery?.motoboy?.id,
+    );
     let motoboy = null;
     let nextStatus = StatusDelivery.PENDING;
     let onCoursedAt = delivery.onCoursedAt;
