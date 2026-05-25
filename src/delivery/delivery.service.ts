@@ -1371,19 +1371,29 @@ export class DeliveryService implements OnModuleInit {
       throw new BadRequestException('Entrega não está aguardando liberação.');
     }
 
-    const normalizedMotoboyId = this.normalizeMotoboyId(
-      data?.motoboyId ?? delivery?.motoboy?.id,
+    this.ensureCityAccess(
+      userFinded,
+      delivery.establishment?.cityId ?? userFinded.cityId,
     );
+
+    const motoboyIdFromBody = this.normalizeMotoboyId(data?.motoboyId);
+    const motoboyIdAlreadySaved = this.normalizeMotoboyId(delivery?.motoboy?.id);
+    const finalMotoboyId = motoboyIdFromBody || motoboyIdAlreadySaved;
+
     let motoboy = null;
     let nextStatus = StatusDelivery.PENDING;
-    let onCoursedAt = delivery.onCoursedAt;
+    let onCoursedAt = delivery.onCoursedAt ?? null;
 
-    if (normalizedMotoboyId) {
-      motoboy = await this.findOneUserById(normalizedMotoboyId);
+    if (finalMotoboyId) {
+      motoboy = await this.findOneUserById(finalMotoboyId);
+
+      if (motoboy.type !== UserType.MOTOBOY) {
+        throw new BadRequestException('Usuário selecionado não é motoboy.');
+      }
       this.ensureCityAccess(userFinded, motoboy.cityId);
 
       nextStatus = StatusDelivery.ONCOURSE;
-      onCoursedAt = addHours(new Date(), -3);
+      onCoursedAt = delivery.onCoursedAt ?? addHours(new Date(), -3);
     }
 
     const updated = await this.deliveryRepository.save(
