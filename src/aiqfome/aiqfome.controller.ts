@@ -57,10 +57,12 @@ export class AiqfomeController {
       const mapped = (result as any)?.success;
       const message = mapped
         ? 'Integração aiqfome concluída com sucesso. Pode fechar esta janela.'
-        : 'Integração autorizada, mas nenhuma empresa Rappidex está cadastrada com esta loja aiqfome. Cadastre o Store ID da loja no Rappidex e tente novamente.';
+        : (result as any)?.message ||
+          'Integração autorizada, mas nenhuma empresa Rappidex está cadastrada com esta loja aiqfome. Cadastre o Store ID da loja no Rappidex e tente novamente.';
       return res.status(200).send(`<html><body style="font-family:Arial,sans-serif;padding:24px;"><h3>${message}</h3></body></html>`);
-    } catch {
-      return res.status(400).send('<html><body style="font-family:Arial,sans-serif;padding:24px;"><h3>Não foi possível concluir a integração aiqfome.</h3></body></html>');
+    } catch (error: any) {
+      const message = error?.response?.data?.message || error?.message || 'Não foi possível concluir a integração aiqfome.';
+      return res.status(400).send(`<html><body style="font-family:Arial,sans-serif;padding:24px;"><h3>${message}</h3></body></html>`);
     }
   }
 

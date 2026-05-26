@@ -148,6 +148,11 @@ export class AiqfomeAuthService {
     if (!storeId) return null;
     const company = await this.userRepository.findOneBy({ aiqfomeStoreId: storeId });
     if (!company) return null;
+    if (!company.aiqfomeEnabled) {
+      throw new BadRequestException(
+        'Esta loja aiqfome existe no Rappidex, mas a integração ainda não foi liberada pelo administrador.',
+      );
+    }
     await this.saveTokens(company.id, tokenData, storeId);
     this.logger.log(`[AiqfomeAuth] OAuth sem state mapeado por storeId=${storeId} companyId=${company.id} status=connected`);
     return company;
@@ -160,7 +165,6 @@ export class AiqfomeAuthService {
     const scopes = scope.split(/\s+/).filter(Boolean);
 
     await this.userRepository.update({ id: companyId }, {
-      aiqfomeEnabled: true,
       aiqfomeStoreId: String(existingStoreId || company?.aiqfomeStoreId || '').trim(),
       aiqfomeAccessToken: tokenData?.access_token,
       aiqfomeRefreshToken: tokenData?.refresh_token,
