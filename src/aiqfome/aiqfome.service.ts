@@ -60,6 +60,15 @@ export class AiqfomeService {
     const hasReadScope = configuredScopes.includes('aqf:order:read');
 
     if (!storeId || !String(orderId || '').trim()) return null;
+    if (!this.hasValidCompanyIntegrationConfig(company, storeId)) {
+      this.logger.error('[AiqfomeWebhook] configuração da empresa inválida para buscar pedido', JSON.stringify({
+        storeId,
+        orderId,
+        hasAccessToken,
+        tokenExpired,
+      }));
+      return null;
+    }
 
     if (storeId !== String(company?.aiqfomeStoreId || '').trim() || !hasAccessToken || !hasRefreshToken) {
       this.logger.error('[AiqfomeWebhook] pré-validação de token aiqfome falhou', JSON.stringify({
@@ -97,13 +106,21 @@ export class AiqfomeService {
           Authorization: `Bearer ${accessToken}`,
           Accept: 'application/json',
           'Content-Type': 'application/json',
+          'User-Agent': 'RappidexExpress/1.0',
+          ...(storeId ? { 'x-store-id': storeId, 'x-aiqfome-store-id': storeId } : {}),
         },
       });
       return res.data;
     } catch (rawError) {
       const error = rawError as AxiosError;
       const statusCode = error?.response?.status;
+      const contentType = String(error?.response?.headers?.['content-type'] || '').trim() || null;
       const apiMessage = (error?.response?.data as any)?.message || (error?.response?.data as any) || error?.message || null;
+      const responseText =
+        typeof error?.response?.data === 'string'
+          ? error.response.data
+          : JSON.stringify(error?.response?.data || '');
+      const htmlPreview = contentType?.includes('text/html') ? responseText.slice(0, 200) : null;
 
       this.logger.error('[AiqfomeWebhook] erro ao buscar pedido V2', JSON.stringify({
         storeId,
@@ -112,12 +129,17 @@ export class AiqfomeService {
         path,
         hasAccessToken,
         tokenExpired,
+        hasReadScope,
         statusCode: statusCode || null,
+        contentType,
+        htmlPreview,
         apiMessage: typeof apiMessage === 'string' ? apiMessage.slice(0, 300) : JSON.stringify(apiMessage || '').slice(0, 300),
       }));
 
       if (statusCode === 403) {
-        this.logger.error('Acesso negado ao pedido aiqfome. Verifique se o token da loja possui scope aqf:order:read e se a loja autorizou a aplicação.');
+        throw new ForbiddenException(
+          'A API aiqfome negou acesso ao pedido. Refaça a conexão pelo botão Reconectar aiqfome no Rappidex e gere um pedido novo sem abrir manualmente no Geraldo antes da importação.',
+        );
       }
 
       if (statusCode === 404) {
@@ -126,6 +148,63 @@ export class AiqfomeService {
 
       return null;
     }
+  }
+
+  async debugFetchOrderByCompanyId(companyId: string, orderId: string, user: UserRequest) {
+    this.ensureCompanyAccess(user, companyId);
+    const company = await this.userRepository.findOneBy({ id: companyId });
+    if (!company) throw new BadRequestException('Empresa não encontrada.');
+
+    const storeId = String(company?.aiqfomeStoreId || '').trim();
+    const baseUrl = String(this.config.get('AIQFOME_API_BASE_URL') || 'https://plataforma.aiqfome.com').trim().replace(/\/$/, '');
+    const path = `/api/v2/orders/${encodeURIComponent(orderId)}`;
+    const url = `${baseUrl}${path}`;
+    const token = await this.authService.getValidAccessToken(companyId);
+
+    try {
+      const res = await axios.get(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'RappidexExpress/1.0',
+          ...(storeId ? { 'x-store-id': storeId, 'x-aiqfome-store-id': storeId } : {}),
+        },
+      });
+      const data = res?.data;
+      return {
+        statusCode: res.status,
+        contentType: String(res.headers?.['content-type'] || '').trim() || null,
+        hasOrder: !!data,
+        message: 'Pedido obtido com sucesso.',
+        topLevelKeys: data && typeof data === 'object' ? Object.keys(data).slice(0, 30) : [],
+      };
+    } catch (error: any) {
+      const statusCode = error?.response?.status || 500;
+      const contentType = String(error?.response?.headers?.['content-type'] || '').trim() || null;
+      const data = error?.response?.data;
+      return {
+        statusCode,
+        contentType,
+        hasOrder: false,
+        message: statusCode === 403
+          ? 'A API aiqfome negou acesso ao pedido. Refaça a conexão pelo botão Reconectar aiqfome no Rappidex e gere um pedido novo sem abrir manualmente no Geraldo antes da importação.'
+          : 'Falha ao consultar pedido na API aiqfome.',
+        topLevelKeys: data && typeof data === 'object' ? Object.keys(data).slice(0, 30) : [],
+      };
+    }
+  }
+
+  private hasValidCompanyIntegrationConfig(company: UserEntity, storeId: string) {
+    const aiqfomeEnabled = !!company?.aiqfomeEnabled;
+    const aiqfomeStoreId = String(company?.aiqfomeStoreId || '').trim();
+    const aiqfomeIntegrationStatus = String(company?.aiqfomeIntegrationStatus || '').trim();
+    const hasAccessToken = !!String(company?.aiqfomeAccessToken || '').trim();
+    const tokenExpiresAt = company?.aiqfomeTokenExpiresAt ? new Date(company.aiqfomeTokenExpiresAt).getTime() : 0;
+    const tokenExpiresAtValid = !!tokenExpiresAt && !Number.isNaN(tokenExpiresAt);
+    const isConnected = aiqfomeIntegrationStatus === 'connected';
+
+    return aiqfomeEnabled && aiqfomeStoreId === storeId && isConnected && hasAccessToken && tokenExpiresAtValid;
   }
 
   async getStatus(companyId: string, user?: UserRequest) {

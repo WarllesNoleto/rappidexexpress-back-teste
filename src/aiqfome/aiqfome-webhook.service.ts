@@ -1,4 +1,4 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
 import { addHours } from 'date-fns';
@@ -86,10 +86,19 @@ export class AiqfomeWebhookService {
       return { ok: true, duplicated: true };
     }
 
-    const order = await this.aiqfomeService.fetchOrderByCompany(
-      company,
-      orderId,
-    );
+    let order: any = null;
+    try {
+      order = await this.aiqfomeService.fetchOrderByCompany(
+        company,
+        orderId,
+      );
+    } catch (error) {
+      if (error instanceof ForbiddenException) {
+        this.logger.error(`[AiqfomeWebhook] ${error.message}`);
+        return { ok: true };
+      }
+      throw error;
+    }
     if (!order) {
       this.logger.error(
         `[AiqfomeWebhook] erro interno ao processar pedido storeId=${storeId || 'n/a'} orderId=${orderId || 'n/a'}`

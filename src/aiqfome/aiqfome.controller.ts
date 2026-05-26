@@ -148,4 +148,14 @@ export class AiqfomeController {
   ) {
     return this.aiqfomeService.syncOrder(companyId, orderId, user);
   }
+
+  @Get('debug/order/:companyId/:orderId')
+  @UseGuards(JwtAuthGuard)
+  debugOrder(
+    @Param('companyId') companyId: string,
+    @Param('orderId') orderId: string,
+    @User() user: UserRequest,
+  ) {
+    return this.aiqfomeService.debugFetchOrderByCompanyId(companyId, orderId, user);
+  }
 }
