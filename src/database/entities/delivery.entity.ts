@@ -112,6 +112,9 @@ export class DeliveryEntity {
   @Column({ nullable: true })
   logisticsStatus?: string;
   @Column({ nullable: true })
+  rawAiqfomePayload?: any;
+
+  @Column({ nullable: true })
   ifoodImportedAt?: Date;
   @Column({ nullable: true })
   ifoodLastEventCode?: string;

@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
 import { addHours } from 'date-fns';
@@ -23,16 +23,9 @@ export class AiqfomeWebhookService {
   ) {}
 
   async processWebhook(headers: Record<string, any>, payload: any) {
-    const storeId = String(payload?.store_id || payload?.storeId || payload?.store?.id || payload?.data?.store_id || payload?.data?.storeId || '').trim();
+    const storeId = this.extractStoreId(payload);
     const event = String(payload?.event || payload?.type || '').trim();
-    const orderId = String(
-      payload?.data?.order_id ||
-        payload?.data?.orderId ||
-        payload?.data?.id ||
-        payload?.order_id ||
-        payload?.orderId ||
-        '',
-    ).trim();
+    const orderId = this.extractOrderId(payload);
     this.logger.log(`[AiqfomeWebhook] Evento recebido: ${event}`);
     this.logger.log(`[AiqfomeWebhook] Store recebida: ${storeId || 'n/a'}`);
 
@@ -87,30 +80,41 @@ export class AiqfomeWebhookService {
     }
 
     let order: any = null;
+    let usedApi = false;
+    let usedPayloadFallback = false;
+
     try {
-      order = await this.aiqfomeService.fetchOrderByCompany(
-        company,
-        orderId,
-      );
+      order = await this.aiqfomeService.fetchOrderByCompany(company, orderId);
+      usedApi = true;
     } catch (error) {
-      if (error instanceof ForbiddenException) {
-        this.logger.error(`[AiqfomeWebhook] ${error.message}`);
-        return { ok: true };
-      }
-      throw error;
+      this.logger.warn(
+        '[AiqfomeWebhook] falha ao buscar pedido na API, usando payload.data como fallback',
+      );
+      order = payload?.data;
+      usedPayloadFallback = true;
     }
+
     if (!order) {
       this.logger.error(
-        `[AiqfomeWebhook] erro interno ao processar pedido storeId=${storeId || 'n/a'} orderId=${orderId || 'n/a'}`
+        `[AiqfomeWebhook] erro interno ao processar pedido storeId=${storeId || 'n/a'} orderId=${orderId || 'n/a'} usouApi=${usedApi} usouPayloadFallback=${usedPayloadFallback}`,
       );
       return { ok: true };
     }
+
+    const normalizedOrder = usedPayloadFallback
+      ? this.normalizeAiqfomeOrderFromPayload(order, payload)
+      : order;
+
     const delivery = await this.deliveryRepository.save(
-      this.mapper.toDelivery(order, company, orderId, storeId) as any,
+      this.mapper.toDelivery(normalizedOrder, company, orderId, storeId, payload, usedPayloadFallback) as any,
     );
     this.gateway.emitDeliveryCreated(
       DeliveryResult.fromEntity(delivery as any),
       company.cityId,
+    );
+
+    this.logger.log(
+      `[AiqfomeWebhook] event=${event || 'n/a'} storeId=${storeId || 'n/a'} orderId=${orderId || 'n/a'} empresaEncontrada=true usouApi=${usedApi} usouPayloadFallback=${usedPayloadFallback} entregaCriada=true`,
     );
     this.logger.log(`[AiqfomeWebhook] Pedido criado: ${orderId}`);
     return { ok: true, deliveryId: delivery.id };
@@ -166,4 +170,59 @@ export class AiqfomeWebhookService {
     );
     return { ok: true };
   }
+
+  private extractOrderId(payload: any): string {
+    return String(
+      payload?.order_id ||
+        payload?.orderId ||
+        payload?.data?.order_id ||
+        payload?.data?.orderId ||
+        payload?.data?.id ||
+        '',
+    ).trim();
+  }
+
+  private extractStoreId(payload: any): string {
+    return String(
+      payload?.store_id ||
+        payload?.storeId ||
+        payload?.store?.id ||
+        payload?.data?.store_id ||
+        payload?.data?.storeId ||
+        '',
+    ).trim();
+  }
+
+  private normalizeAiqfomeOrderFromPayload(data: any, payload: any) {
+    const customer = data?.customer || data?.user || data?.client || {};
+    const delivery = data?.delivery || {};
+    const address = delivery?.address || data?.address || customer?.address || data?.shipping?.address || '';
+    const payment = data?.payment || {};
+
+    return {
+      id: data?.id || this.extractOrderId(payload),
+      customer: {
+        name: customer?.name || data?.customer_name || data?.user_name || 'Cliente aiqfome',
+        phone: customer?.phone || data?.phone || data?.customer_phone || '',
+      },
+      delivery: {
+        address,
+        neighborhood: delivery?.neighborhood || data?.address?.neighborhood || data?.neighborhood || '',
+        reference:
+          delivery?.reference ||
+          data?.address?.reference ||
+          data?.reference ||
+          data?.complement ||
+          '',
+      },
+      total: data?.total ?? data?.total_value ?? data?.amount ?? payment?.total ?? data?.summary?.total ?? 0,
+      payment: {
+        method: payment?.method || payment?.type || data?.payment_method || '',
+        total: payment?.total ?? data?.total ?? 0,
+      },
+      observation: data?.observation || data?.notes || data?.customer_note || '',
+      items: data?.items || data?.order_items || data?.products || [],
+    };
+  }
+
 }

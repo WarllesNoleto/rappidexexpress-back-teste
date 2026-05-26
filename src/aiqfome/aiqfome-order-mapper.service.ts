@@ -13,8 +13,11 @@ export class AiqfomeOrderMapperService {
     company: UserEntity,
     orderId: string,
     storeId: string,
+    payload?: any,
+    usedPayloadFallback = false,
   ): Partial<DeliveryEntity> {
     const total = String(order?.total ?? order?.payment?.total ?? '0');
+    const address = order?.delivery?.address || order?.address || order?.customer?.address || 'Endereço não informado no webhook';
     if (!order?.customer?.name)
       this.logger.warn('[AiqfomeWebhook] Campo ausente: customer.name');
     return {
@@ -23,7 +26,12 @@ export class AiqfomeOrderMapperService {
       clientPhone: order?.customer?.phone || '',
       value: total,
       payment: 'PAGO' as any,
-      observation: order?.observation || order?.notes || '',
+      observation: [order?.observation || order?.notes || '', order?.payment?.method || order?.payment?.type || order?.payment_method || '']
+        .filter(Boolean)
+        .join(' | '),
+      clientAddress: address,
+      addressNeighborhood: order?.delivery?.neighborhood || order?.address?.neighborhood || order?.neighborhood || '',
+      addressReference: order?.delivery?.reference || order?.address?.reference || order?.reference || order?.complement || '',
       establishment: company,
       createdBy: company.id,
       status: StatusDelivery.PENDING,
@@ -37,6 +45,7 @@ export class AiqfomeOrderMapperService {
       cityId: company.cityId as any,
       createdAt: addHours(new Date(), -3),
       updatedAt: addHours(new Date(), -3),
+      rawAiqfomePayload: usedPayloadFallback ? (payload?.data || payload) : undefined,
     } as any;
   }
 }
