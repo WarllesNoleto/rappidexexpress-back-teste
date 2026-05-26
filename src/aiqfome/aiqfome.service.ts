@@ -176,21 +176,30 @@ export class AiqfomeService {
     return { success: true, webhookUrl };
   }
 
-  async updateConfig(companyId: string, body: any, user: UserRequest) {
+  async updateConfig(companyId: string, body: { aiqfomeEnabled?: boolean; aiqfomeStoreId?: string }, user: UserRequest) {
+    const isAdmin = user.type === UserType.ADMIN || user.type === UserType.SUPERADMIN;
+    if (!isAdmin) {
+      throw new ForbiddenException('Acesso negado.');
+    }
+
     this.ensureCompanyAccess(user, companyId);
     const current = await this.userRepository.findOneBy({ id: companyId });
     if (!current) return { success: false };
+
     const aiqfomeEnabled = Boolean(body?.aiqfomeEnabled);
     const aiqfomeStoreId = String(body?.aiqfomeStoreId || '').trim();
+
     if (aiqfomeEnabled && !aiqfomeStoreId) {
-      throw new BadRequestException('ID da loja aiqfome é obrigatório quando a integração está ativa.');
+      throw new BadRequestException('Informe o ID da loja aiqfome.');
     }
+
     await this.userRepository.update({ id: companyId }, {
       aiqfomeEnabled,
       aiqfomeStoreId: aiqfomeEnabled ? aiqfomeStoreId : '',
       aiqfomeWebhookUrl: String(this.config.get('AIQFOME_WEBHOOK_URL') || current.aiqfomeWebhookUrl || '').trim(),
       aiqfomeIntegrationStatus: aiqfomeEnabled ? (current.aiqfomeAccessToken ? 'connected' : 'not_connected') : 'not_configured',
     } as any);
+
     return this.getStatus(companyId);
   }
 

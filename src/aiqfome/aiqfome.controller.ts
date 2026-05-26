@@ -19,6 +19,7 @@ import { JwtAuthGuard } from '../authenticator/guards/jwt-auth.guard';
 import { User } from '../shared/decorators';
 import { UserRequest } from '../shared/interfaces';
 import { onlyForAdmin } from '../shared/utils/permissions.function';
+import { UpdateAiqfomeConfigDto } from './dto/update-aiqfome-config.dto';
 
 @Controller('aiqfome')
 export class AiqfomeController {
@@ -98,7 +99,7 @@ export class AiqfomeController {
 
   @Put('config/:companyId')
   @UseGuards(JwtAuthGuard)
-  updateConfig(@Param('companyId') companyId: string, @Body() body: any, @User() user: UserRequest) {
+  updateConfig(@Param('companyId') companyId: string, @Body() body: UpdateAiqfomeConfigDto, @User() user: UserRequest) {
     return this.aiqfomeService.updateConfig(companyId, body, user);
   }
 
