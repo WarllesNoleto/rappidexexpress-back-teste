@@ -47,25 +47,39 @@ export class AiqfomeAuthService {
   async handleCallback(code?: string, state?: string) {
     if (!code) throw new BadRequestException('code é obrigatório');
 
+    this.logger.log(`[AiqfomeAuth] callback recebido statePresent=${Boolean(state)}`);
     const tokenData = await this.exchangeCodeForToken(code);
-    const storeIdFromApi = await this.resolveAuthorizedStoreId(tokenData?.access_token);
+    const tokenScope = String(tokenData?.scope || '').trim();
+    const tokenScopes = tokenScope.split(/\s+/).filter(Boolean);
+    const hasStoreReadScope = tokenScopes.includes('aqf:store:read');
+    this.logger.log(`[AiqfomeAuth] token possui aqf:store:read=${hasStoreReadScope}`);
 
-    if (!state && !storeIdFromApi) {
+    if (state) {
+      const companyId = this.parseState(state);
+      const storeIdFromApi = await this.resolveAuthorizedStoreId(tokenData?.access_token);
+      await this.saveTokens(companyId, tokenData, storeIdFromApi);
+      this.logger.log(`[AiqfomeAuth] OAuth salvo via state companyId=${companyId} storeId=${storeIdFromApi || 'n/a'} status=connected`);
+      return { success: true, companyId, storeId: storeIdFromApi || null, mappedBy: 'state' };
+    }
+
+    if (!hasStoreReadScope) {
+      return {
+        success: false,
+        message: 'O app aiqfome autorizou sem o escopo aqf:store:read. Atualize os escopos da aplicação e reconecte.',
+      };
+    }
+
+    const storeIdFromApi = await this.resolveAuthorizedStoreId(tokenData?.access_token);
+    if (!storeIdFromApi) {
       return {
         success: false,
         message: 'Não foi possível identificar a loja aiqfome autorizada. Verifique se o app possui o escopo aqf:store:read e tente reconectar.',
       };
     }
 
-    if (state) {
-      const companyId = this.parseState(state);
-      await this.saveTokens(companyId, tokenData, storeIdFromApi);
-      this.logger.log(`[AiqfomeAuth] OAuth salvo via state companyId=${companyId} storeId=${storeIdFromApi || 'n/a'} status=connected`);
-      return { success: true, companyId, storeId: storeIdFromApi || null, mappedBy: 'state' };
-    }
-
     const mappedCompany = await this.handleCallbackWithoutState(tokenData, storeIdFromApi);
     if (!mappedCompany) {
+      this.logger.log('[AiqfomeAuth] empresa encontrada por storeId=false');
       return {
         success: false,
         message:
@@ -143,6 +157,9 @@ export class AiqfomeAuthService {
         payload?.items?.[0]?.id,
         payload?.items?.[0]?.storeId,
         payload?.items?.[0]?.store_id,
+        payload?.results?.[0]?.id,
+        payload?.results?.[0]?.storeId,
+        payload?.results?.[0]?.store_id,
       ];
       const found = candidates.find((value) => String(value || '').trim());
       return String(found || '').trim();
@@ -161,6 +178,9 @@ export class AiqfomeAuthService {
       }
     };
 
+    const fromStoresV1 = await checkEndpoint('/stores/v1');
+    if (fromStoresV1) return fromStoresV1;
+
     const fromStores = await checkEndpoint('/api/v2/stores');
     if (fromStores) return fromStores;
 
@@ -172,6 +192,7 @@ export class AiqfomeAuthService {
     const storeId = String(resolvedStoreId || '').trim();
     if (!storeId) return null;
     const company = await this.userRepository.findOneBy({ aiqfomeStoreId: storeId });
+    this.logger.log(`[AiqfomeAuth] empresa encontrada por storeId=${Boolean(company)}`);
     if (!company) return null;
     if (!company.aiqfomeEnabled) {
       throw new BadRequestException(
