@@ -118,13 +118,7 @@ export class AiqfomeService {
     } catch (rawError) {
       const error = rawError as AxiosError;
       const statusCode = error?.response?.status;
-      const contentType = String(error?.response?.headers?.['content-type'] || '').trim() || null;
-      const apiMessage = (error?.response?.data as any)?.message || (error?.response?.data as any) || error?.message || null;
-      const responseText =
-        typeof error?.response?.data === 'string'
-          ? error.response.data
-          : JSON.stringify(error?.response?.data || '');
-      const htmlPreview = contentType?.includes('text/html') ? responseText.slice(0, 200) : null;
+      const { contentType, apiMessage, htmlPreview } = this.summarizeErrorPayload(error);
 
       this.logger.error('[AiqfomeWebhook] erro ao buscar pedido V2', JSON.stringify({
         storeId,
@@ -162,6 +156,7 @@ export class AiqfomeService {
       } catch (fallbackError: any) {
         const fallbackStatusCode = fallbackError?.response?.status || null;
         const fallbackContentType = String(fallbackError?.response?.headers?.['content-type'] || '').trim() || null;
+        const fallbackSummary = this.summarizeErrorPayload(fallbackError);
         this.logger.error('[AiqfomeWebhook] fallback de busca do pedido via search falhou', JSON.stringify({
           baseUrl,
           path: searchPath,
@@ -169,6 +164,8 @@ export class AiqfomeService {
           orderId,
           statusCode: fallbackStatusCode,
           contentType: fallbackContentType,
+          htmlPreview: fallbackSummary.htmlPreview,
+          apiMessage: fallbackSummary.apiMessage,
           tokenExpired,
           hasReadScope,
         }));
@@ -197,6 +194,7 @@ export class AiqfomeService {
       } catch (fallbackListError: any) {
         const fallbackListStatusCode = fallbackListError?.response?.status || null;
         const fallbackListContentType = String(fallbackListError?.response?.headers?.['content-type'] || '').trim() || null;
+        const fallbackListSummary = this.summarizeErrorPayload(fallbackListError);
         this.logger.error('[AiqfomeWebhook] fallback de busca do pedido via listagem falhou', JSON.stringify({
           baseUrl,
           path: listPath,
@@ -204,6 +202,8 @@ export class AiqfomeService {
           orderId,
           statusCode: fallbackListStatusCode,
           contentType: fallbackListContentType,
+          htmlPreview: fallbackListSummary.htmlPreview,
+          apiMessage: fallbackListSummary.apiMessage,
           tokenExpired,
           hasReadScope,
         }));
@@ -228,6 +228,20 @@ export class AiqfomeService {
 
       return null;
     }
+  }
+
+
+  private summarizeErrorPayload(error: any) {
+    const contentType = String(error?.response?.headers?.['content-type'] || '').trim() || null;
+    const raw = error?.response?.data;
+    const responseText = typeof raw === 'string' ? raw : JSON.stringify(raw || '');
+    const compact = responseText.replace(/\s+/g, ' ').trim();
+
+    return {
+      contentType,
+      apiMessage: typeof raw?.message === 'string' ? raw.message.slice(0, 300) : compact.slice(0, 300) || null,
+      htmlPreview: contentType?.includes('text/html') ? compact.slice(0, 180) : null,
+    };
   }
 
   async debugFetchOrderByCompanyId(companyId: string, orderId: string, user: UserRequest) {
