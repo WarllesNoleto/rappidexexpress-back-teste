@@ -26,8 +26,8 @@ export class AiqfomeWebhookService {
     const storeId = this.extractStoreId(payload);
     const event = String(payload?.event || payload?.type || '').trim();
     const orderId = this.extractOrderId(payload);
-    this.logger.log(`[AiqfomeWebhook] Evento recebido: ${event}`);
-    this.logger.log(`[AiqfomeWebhook] Store recebida: ${storeId || 'n/a'}`);
+    const source = this.identifySource(headers, payload);
+    this.logger.log(`[AiqfomeWebhook] webhook recebido source=${source} event=${event || 'n/a'} storeId=${storeId || 'n/a'} orderId=${orderId || 'n/a'}`);
 
     const company = storeId
       ? await this.userRepository.findOneBy({ aiqfomeStoreId: storeId })
@@ -70,12 +70,13 @@ export class AiqfomeWebhookService {
     }
 
     if (event !== 'ready-order') {
+      this.logger.log(`[AiqfomeWebhook] pedido ignorado source=${source} motivo=evento_diferente event=${event || 'n/a'} orderId=${orderId || 'n/a'}`);
       return { ok: true };
     }
 
     const existing = await this.findExisting(orderId, storeId);
     if (existing) {
-      this.logger.log('[AiqfomeWebhook] Pedido duplicado ignorado');
+      this.logger.log(`[AiqfomeWebhook] pedido duplicado source=${source} storeId=${storeId || 'n/a'} orderId=${orderId || 'n/a'}`);
       return { ok: true, duplicated: true };
     }
 
@@ -116,8 +117,17 @@ export class AiqfomeWebhookService {
     this.logger.log(
       `[AiqfomeWebhook] event=${event || 'n/a'} storeId=${storeId || 'n/a'} orderId=${orderId || 'n/a'} empresaEncontrada=true usouApi=${usedApi} usouPayloadFallback=${usedPayloadFallback} entregaCriada=true`,
     );
-    this.logger.log(`[AiqfomeWebhook] Pedido criado: ${orderId}`);
+    this.logger.log(`[AiqfomeWebhook] pedido criado source=${source} storeId=${storeId || 'n/a'} orderId=${orderId || 'n/a'} deliveryId=${delivery.id}`);
     return { ok: true, deliveryId: delivery.id };
+  }
+
+
+  private identifySource(headers: Record<string, any>, payload: any): string {
+    const hasAiqfomeSecretHeader = Boolean(headers?.['x-aiqfome-secret'] || headers?.['x-webhook-secret']);
+    const hasManualFlag = Boolean(headers?.['x-rappidex-manual'] || payload?.manualSync || payload?.simulated);
+    if (hasManualFlag) return 'manual/simulado';
+    if (hasAiqfomeSecretHeader) return 'aiqfome';
+    return 'manual/sem-assinatura';
   }
 
   private findExisting(orderId: string, storeId: string) {

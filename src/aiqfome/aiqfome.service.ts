@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { AxiosError } from 'axios';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -387,13 +387,71 @@ export class AiqfomeService {
   async registerWebhook(companyId: string, user: UserRequest) {
     this.ensureCompanyAccess(user, companyId);
     const c = await this.userRepository.findOneBy({ id: companyId });
-    if (!c) return { success: false };
+    if (!c) throw new NotFoundException('Empresa não encontrada');
+
     const webhookUrl = String(this.config.get('AIQFOME_WEBHOOK_URL') || '').trim();
+    const storeId = String(c.aiqfomeStoreId || '').trim();
+    if (!webhookUrl || !storeId) {
+      throw new BadRequestException('Configure AIQFOME_WEBHOOK_URL e ID da loja para registrar webhook.');
+    }
+
+    const token = await this.authService.getValidAccessToken(companyId);
+    const baseUrl = String(this.config.get('AIQFOME_API_BASE_URL') || 'https://plataforma.aiqfome.com').trim().replace(/\/$/, '');
+
+    const payload = { url: webhookUrl, event: ['ready-order'] };
+    const endpoints = [
+      { method: 'post', path: `/api/v2/store/${encodeURIComponent(storeId)}/webhooks` },
+      { method: 'post', path: `/store/${encodeURIComponent(storeId)}/webhooks` },
+      { method: 'put', path: `/api/v2/store/${encodeURIComponent(storeId)}/webhooks` },
+    ] as const;
+
+    let registeredByApi = false;
+    let lastError: any = null;
+    for (const endpoint of endpoints) {
+      try {
+        const url = `${baseUrl}${endpoint.path}`;
+        const requestHeaders = {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'x-store-id': storeId,
+          'x-aiqfome-store-id': storeId,
+        };
+
+        if (endpoint.method === 'post') await axios.post(url, payload, { headers: requestHeaders });
+        else await axios.put(url, payload, { headers: requestHeaders });
+
+        registeredByApi = true;
+        this.logger.log(`[AiqfomeWebhookRegister] webhook registrado automaticamente endpoint=${endpoint.path} storeId=${storeId}`);
+        break;
+      } catch (error: any) {
+        lastError = error;
+        const status = error?.response?.status || 'n/a';
+        this.logger.warn(`[AiqfomeWebhookRegister] tentativa de registro automático falhou endpoint=${endpoint.path} status=${status}`);
+      }
+    }
+
+    const manualSetupRequired = !registeredByApi;
     await this.userRepository.update({ id: companyId }, {
       aiqfomeWebhookUrl: webhookUrl,
       aiqfomeIntegrationStatus: 'connected',
     } as any);
-    return { success: true, webhookUrl };
+
+    if (manualSetupRequired) {
+      this.logger.warn('[AiqfomeWebhookRegister] API não permitiu cadastro automático. Cadastro manual necessário no portal aiqfome.');
+    }
+
+    return {
+      success: true,
+      webhookUrl,
+      registeredByApi,
+      manualSetupRequired,
+      manualSetupUrl: webhookUrl,
+      message: manualSetupRequired
+        ? 'Não foi possível registrar webhook automaticamente pela API V2. Cadastre manualmente a URL no portal/developer aiqfome.'
+        : 'Webhook registrado automaticamente na API aiqfome.',
+      lastErrorStatus: manualSetupRequired ? (lastError?.response?.status || null) : null,
+    };
   }
 
   async updateConfig(companyId: string, body: { aiqfomeEnabled?: boolean; aiqfomeStoreId?: string }, user: UserRequest) {
