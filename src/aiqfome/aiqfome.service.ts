@@ -45,10 +45,13 @@ export class AiqfomeService {
 
   async fetchOrderByCompany(company: UserEntity, orderId: string) {
     const storeId = String(company?.aiqfomeStoreId || '').trim();
-    const candidateBases = this.getAiqfomeApiBaseCandidates();
+    const baseUrl = String(this.config.get('AIQFOME_API_BASE_URL') || 'https://plataforma.aiqfome.com').trim().replace(/\/$/, '');
     const path = `/api/v2/orders/${encodeURIComponent(orderId)}`;
     const searchPath = `/api/v2/orders/search?filter[store_id]=${encodeURIComponent(storeId)}&filter[order_id]=${encodeURIComponent(orderId)}`;
     const listPath = `/api/v2/orders?filter[store_ids]=${encodeURIComponent(storeId)}`;
+    const url = `${baseUrl}${path}`;
+    const searchUrl = `${baseUrl}${searchPath}`;
+    const listUrl = `${baseUrl}${listPath}`;
     const now = Date.now();
     const expiresAt = company?.aiqfomeTokenExpiresAt ? new Date(company.aiqfomeTokenExpiresAt).getTime() : 0;
     const tokenExpired = !expiresAt || expiresAt <= now + 60_000;
@@ -75,7 +78,7 @@ export class AiqfomeService {
       this.logger.error('[AiqfomeWebhook] pré-validação de token aiqfome falhou', JSON.stringify({
         storeId,
         orderId,
-        baseUrl: candidateBases[0] || null,
+        baseUrl,
         path,
         hasAccessToken,
         tokenExpired,
@@ -109,17 +112,10 @@ export class AiqfomeService {
       ...(storeId ? { 'x-store-id': storeId, 'x-aiqfome-store-id': storeId } : {}),
     };
 
-    let lastError: AxiosError | null = null;
-
-    for (const baseUrl of candidateBases) {
-      const url = `${baseUrl}${path}`;
-      const searchUrl = `${baseUrl}${searchPath}`;
-      const listUrl = `${baseUrl}${listPath}`;
-      try {
-        const res = await axios.get(url, { headers: requestHeaders });
-        return res.data;
-      } catch (rawError) {
-        lastError = rawError as AxiosError;
+    try {
+      const res = await axios.get(url, { headers: requestHeaders });
+      return res.data;
+    } catch (rawError) {
       const error = rawError as AxiosError;
       const statusCode = error?.response?.status;
       const { contentType, apiMessage, htmlPreview } = this.summarizeErrorPayload(error);
@@ -214,45 +210,26 @@ export class AiqfomeService {
       }
 
       if (statusCode === 403) {
-        this.logger.warn('[AiqfomeWebhook] acesso negado ao consultar pedido completo na API aiqfome; fallback mantido', JSON.stringify({
+        this.logger.error('[AiqfomeWebhook] acesso negado ao buscar pedido no endpoint principal', JSON.stringify({
+          statusCode,
           companyId: company?.id || null,
           storeId,
           orderId,
-          statusCode,
-          reason: 'forbidden_or_missing_scope',
+          hasReadScope,
         }));
+        throw new ForbiddenException(
+          'A API aiqfome negou acesso ao pedido. Verifique se o pedido pertence à loja autorizada, se o app possui aqf:order:read e se a loja teste permite consulta de pedidos via API.',
+        );
       }
 
       if (statusCode === 404) {
         this.logger.warn('Pedido aiqfome não encontrado ou não disponível na API V2');
       }
 
-      }
+      return null;
     }
-
-    if (lastError?.response?.status === 403) {
-      this.logger.warn('[AiqfomeWebhook] nenhuma rota autorizada para consulta completa do pedido; usando fallback do webhook', JSON.stringify({
-        companyId: company?.id || null,
-        storeId,
-        orderId,
-      }));
-    }
-
-    return null;
   }
 
-
-  private getAiqfomeApiBaseCandidates() {
-    const configuredApiBase = String(this.config.get('AIQFOME_API_BASE_URL') || '').trim().replace(/\/$/, '');
-    const configuredStoreBase = String(this.config.get('AIQFOME_STORE_BASE_URL') || '').trim().replace(/\/$/, '');
-    const defaults = [
-      'https://api.aiqfome.com.br',
-      'https://api.aiqfome.com',
-      'https://plataforma.aiqfome.com',
-    ];
-
-    return [configuredApiBase, configuredStoreBase, ...defaults].filter((value, index, arr) => value && arr.indexOf(value) === index);
-  }
 
   private summarizeErrorPayload(error: any) {
     const contentType = String(error?.response?.headers?.['content-type'] || '').trim() || null;
@@ -273,16 +250,14 @@ export class AiqfomeService {
     if (!company) throw new BadRequestException('Empresa não encontrada.');
 
     const storeId = String(company?.aiqfomeStoreId || '').trim();
-    const candidateBases = this.getAiqfomeApiBaseCandidates();
+    const baseUrl = String(this.config.get('AIQFOME_API_BASE_URL') || 'https://plataforma.aiqfome.com').trim().replace(/\/$/, '');
     const path = `/api/v2/orders/${encodeURIComponent(orderId)}`;
     const searchPath = `/api/v2/orders/search?filter[store_id]=${encodeURIComponent(storeId)}&filter[order_id]=${encodeURIComponent(orderId)}`;
     const listPath = `/api/v2/orders?filter[store_ids]=${encodeURIComponent(storeId)}`;
+    const url = `${baseUrl}${path}`;
+    const searchUrl = `${baseUrl}${searchPath}`;
+    const listUrl = `${baseUrl}${listPath}`;
     const token = await this.authService.getValidAccessToken(companyId);
-
-    const primaryBase = candidateBases[0] || 'https://api.aiqfome.com.br';
-    const url = `${primaryBase}${path}`;
-    const searchUrl = `${primaryBase}${searchPath}`;
-    const listUrl = `${primaryBase}${listPath}`;
 
     try {
       const requestHeaders = {
