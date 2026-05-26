@@ -49,14 +49,14 @@ export class AiqfomeAuthService {
 
     this.logger.log(`[AiqfomeAuth] callback recebido statePresent=${Boolean(state)}`);
     const tokenData = await this.exchangeCodeForToken(code);
-    const tokenScope = String(tokenData?.scope || '').trim();
-    const tokenScopes = tokenScope.split(/\s+/).filter(Boolean);
-    const hasStoreReadScope = tokenScopes.includes('aqf:store:read');
+    const hasStoreReadScope = this.tokenHasScope(tokenData, 'aqf:store:read');
     this.logger.log(`[AiqfomeAuth] token possui aqf:store:read=${hasStoreReadScope}`);
 
     if (state) {
       const companyId = this.parseState(state);
-      const storeIdFromApi = await this.resolveAuthorizedStoreId(tokenData?.access_token);
+      const storeIdFromApi = hasStoreReadScope
+        ? await this.resolveAuthorizedStoreId(tokenData?.access_token)
+        : '';
       await this.saveTokens(companyId, tokenData, storeIdFromApi);
       this.logger.log(`[AiqfomeAuth] OAuth salvo via state companyId=${companyId} storeId=${storeIdFromApi || 'n/a'} status=connected`);
       return { success: true, companyId, storeId: storeIdFromApi || null, mappedBy: 'state' };
@@ -138,54 +138,93 @@ export class AiqfomeAuthService {
 
   private async resolveAuthorizedStoreId(accessToken?: string) {
     if (!accessToken) return '';
-    const baseUrl = String(this.configService.get<string>('AIQFOME_API_BASE_URL') || 'https://plataforma.aiqfome.com').trim().replace(/\/$/, '');
+    const apiBaseUrl = String(
+      this.configService.get<string>('AIQFOME_API_BASE_URL') || '',
+    ).trim().replace(/\/$/, '');
+    const storeBaseUrl = String(
+      this.configService.get<string>('AIQFOME_STORE_BASE_URL') ||
+      'https://plataforma.aiqfome.com',
+    ).trim().replace(/\/$/, '');
     const headers = { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' };
-    const extractStoreId = (payload: any) => {
-      const candidates = [
-        payload?.id,
-        payload?.storeId,
-        payload?.store_id,
-        payload?.data?.id,
-        payload?.data?.storeId,
-        payload?.data?.store_id,
-        payload?.data?.[0]?.id,
-        payload?.data?.[0]?.storeId,
-        payload?.data?.[0]?.store_id,
-        payload?.stores?.[0]?.id,
-        payload?.stores?.[0]?.storeId,
-        payload?.stores?.[0]?.store_id,
-        payload?.items?.[0]?.id,
-        payload?.items?.[0]?.storeId,
-        payload?.items?.[0]?.store_id,
-        payload?.results?.[0]?.id,
-        payload?.results?.[0]?.storeId,
-        payload?.results?.[0]?.store_id,
-      ];
-      const found = candidates.find((value) => String(value || '').trim());
-      return String(found || '').trim();
-    };
 
-    const checkEndpoint = async (path: string) => {
+    const checkEndpoint = async (url: string) => {
       try {
-        const res = await axios.get(`${baseUrl}${path}`, { headers });
-        const storeId = extractStoreId(res.data);
-        this.logger.log(`[AiqfomeAuth] resolve storeId endpoint=${path} status=${res.status} found=${Boolean(storeId)}${storeId ? ` storeId=${storeId}` : ''}`);
+        const res = await axios.get(url, { headers });
+        const storeId = this.extractStoreId(res.data);
+        const responseData = res?.data;
+        const keys = responseData && typeof responseData === 'object'
+          ? Object.keys(responseData).slice(0, 10).join(',')
+          : '';
+        this.logger.log(
+          `[AiqfomeAuth] resolve storeId url=${url} status=${res.status} isArray=${Array.isArray(responseData)} keys=${keys} found=${Boolean(storeId)}${storeId ? ` storeId=${storeId}` : ''}`,
+        );
         return storeId;
       } catch (error: any) {
         const status = error?.response?.status || 'n/a';
-        this.logger.warn(`[AiqfomeAuth] não foi possível resolver storeId endpoint=${path} status=${status}`);
+        this.logger.warn(`[AiqfomeAuth] não foi possível resolver storeId url=${url} status=${status}`);
         return '';
       }
     };
 
-    const fromStoresV1 = await checkEndpoint('/stores/v1');
-    if (fromStoresV1) return fromStoresV1;
+    const endpoints = [
+      `${storeBaseUrl}/stores/v1`,
+      ...(apiBaseUrl
+        ? [
+            `${apiBaseUrl}/stores/v1`,
+            `${apiBaseUrl}/api/v2/stores`,
+            `${apiBaseUrl}/api/v2/store`,
+          ]
+        : []),
+    ];
 
-    const fromStores = await checkEndpoint('/api/v2/stores');
-    if (fromStores) return fromStores;
+    for (const endpoint of endpoints) {
+      const storeId = await checkEndpoint(endpoint);
+      if (storeId) return storeId;
+    }
+    return '';
+  }
 
-    const fromStore = await checkEndpoint('/api/v2/store');
-    return fromStore || '';
+  private extractStoreId(payload: any): string {
+    const candidates = [
+      payload?.id,
+      payload?.storeId,
+      payload?.store_id,
+
+      Array.isArray(payload) ? payload?.[0]?.id : undefined,
+      Array.isArray(payload) ? payload?.[0]?.storeId : undefined,
+      Array.isArray(payload) ? payload?.[0]?.store_id : undefined,
+
+      payload?.data?.id,
+      payload?.data?.storeId,
+      payload?.data?.store_id,
+      Array.isArray(payload?.data) ? payload?.data?.[0]?.id : undefined,
+      Array.isArray(payload?.data) ? payload?.data?.[0]?.storeId : undefined,
+      Array.isArray(payload?.data) ? payload?.data?.[0]?.store_id : undefined,
+
+      payload?.stores?.[0]?.id,
+      payload?.stores?.[0]?.storeId,
+      payload?.stores?.[0]?.store_id,
+
+      payload?.items?.[0]?.id,
+      payload?.items?.[0]?.storeId,
+      payload?.items?.[0]?.store_id,
+
+      payload?.results?.[0]?.id,
+      payload?.results?.[0]?.storeId,
+      payload?.results?.[0]?.store_id,
+    ];
+
+    const found = candidates.find((value) => String(value || '').trim());
+    return String(found || '').trim();
+  }
+
+  private tokenHasScope(tokenData: any, requiredScope: string): boolean {
+    const rawScope = tokenData?.scope ?? tokenData?.scopes ?? '';
+    const scopes = Array.isArray(rawScope)
+      ? rawScope
+      : String(rawScope).split(/[\s,]+/).filter(Boolean);
+
+    return scopes.includes(requiredScope);
   }
 
   private async handleCallbackWithoutState(tokenData: any, resolvedStoreId?: string) {
