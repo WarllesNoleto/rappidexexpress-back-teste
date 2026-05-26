@@ -203,6 +203,20 @@ export class AiqfomeService {
     return this.getStatus(companyId);
   }
 
+
+  async completePendingAuthorization(pendingId: string, body: { companyId?: string }, user: UserRequest) {
+    const isAdmin = user.type === UserType.ADMIN || user.type === UserType.SUPERADMIN;
+    const isShopkeeper = user.type === UserType.SHOPKEEPER || user.type === UserType.SHOPKEEPERADMIN;
+
+    if (user.type === UserType.MOTOBOY) throw new ForbiddenException('Acesso negado.');
+
+    const targetCompanyId = isAdmin ? String(body?.companyId || '').trim() : user.id;
+    if (!targetCompanyId) throw new BadRequestException('Informe companyId para concluir a autorização pendente.');
+    if (!isAdmin && !isShopkeeper) throw new ForbiddenException('Acesso negado.');
+
+    return this.authService.completePendingAuthorization(pendingId, targetCompanyId);
+  }
+
   async syncOrder(companyId: string, orderId: string, user: UserRequest) {
     this.ensureCompanyAccess(user, companyId);
     const c = await this.userRepository.findOneBy({ id: companyId });

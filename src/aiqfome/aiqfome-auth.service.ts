@@ -3,9 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { addHours } from 'date-fns';
 import { MongoRepository } from 'typeorm';
-import { UserEntity } from '../database/entities';
+import { AiqfomePendingAuthorizationEntity, UserEntity } from '../database/entities';
 import axios from 'axios';
 import * as crypto from 'crypto';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class AiqfomeAuthService {
@@ -15,6 +16,8 @@ export class AiqfomeAuthService {
     private readonly configService: ConfigService,
     @InjectRepository(UserEntity)
     private readonly userRepository: MongoRepository<UserEntity>,
+    @InjectRepository(AiqfomePendingAuthorizationEntity)
+    private readonly pendingAuthorizationRepository: MongoRepository<AiqfomePendingAuthorizationEntity>,
   ) {}
 
   async buildOAuthUrlByCompany(companyId: string) {
@@ -69,9 +72,11 @@ export class AiqfomeAuthService {
     const storeIdFromApi = await this.resolveAuthorizedStoreId(tokenData?.access_token);
     if (!storeIdFromApi) {
       this.logger.warn('[AiqfomeAuth] não foi possível identificar storeId automaticamente');
+      const pendingAuthorization = await this.createPendingAuthorization(tokenData);
       return {
         success: false,
-        message: 'Autorização recebida, mas não foi possível identificar automaticamente a loja aiqfome autorizada. Acesse o Rappidex, abra Empresas Cadastradas e clique em Reconectar aiqfome na sua loja.',
+        pendingAuthorizationId: pendingAuthorization.id,
+        message: 'Autorização aiqfome recebida. Para concluir a integração, acesse o Rappidex e vincule esta autorização à sua loja.',
       };
     }
 
@@ -114,7 +119,42 @@ export class AiqfomeAuthService {
     return response.data;
   }
 
-  async getValidAccessToken(companyId: string) { const company = await this.userRepository.findOneBy({ id: companyId }); if (!company?.aiqfomeAccessToken) throw new BadRequestException('Empresa sem token aiqfome'); if (company.aiqfomeTokenExpiresAt && new Date(company.aiqfomeTokenExpiresAt).getTime() <= Date.now() + 60_000) { const refreshed = await this.refreshToken(companyId); return refreshed.access_token; } return company.aiqfomeAccessToken; }
+
+
+  async completePendingAuthorization(pendingId: string, companyId: string) {
+    const pending = await this.pendingAuthorizationRepository.findOneBy({ id: pendingId });
+    if (!pending) throw new NotFoundException('Autorização pendente não encontrada.');
+
+    if (pending.status !== 'pending' || pending.usedAt) {
+      throw new BadRequestException('Esta autorização pendente já foi utilizada.');
+    }
+
+    if (new Date(pending.expiresAt).getTime() <= Date.now()) {
+      await this.pendingAuthorizationRepository.update({ id: pendingId }, { status: 'expired' } as any);
+      throw new BadRequestException('Autorização pendente expirada. Gere uma nova autorização.');
+    }
+
+    const company = await this.userRepository.findOneBy({ id: companyId });
+    if (!company) throw new NotFoundException('Empresa não encontrada.');
+    if (!company.aiqfomeEnabled) throw new BadRequestException('Integração aiqfome desativada para esta empresa.');
+    if (!String(company.aiqfomeStoreId || '').trim()) throw new BadRequestException('Empresa sem ID da loja aiqfome configurado.');
+
+    await this.saveTokens(companyId, {
+      access_token: pending.accessToken,
+      refresh_token: pending.refreshToken,
+      scope: pending.scope || (pending.scopes || []).join(' '),
+      expires_in: Math.max(60, Math.floor((new Date(pending.tokenExpiresAt).getTime() - Date.now()) / 1000)),
+    }, company.aiqfomeStoreId);
+
+    await this.pendingAuthorizationRepository.update({ id: pendingId }, {
+      usedAt: new Date(),
+      status: 'used',
+    } as any);
+
+    return { success: true, companyId };
+  }
+
+    async getValidAccessToken(companyId: string) { const company = await this.userRepository.findOneBy({ id: companyId }); if (!company?.aiqfomeAccessToken) throw new BadRequestException('Empresa sem token aiqfome'); if (company.aiqfomeTokenExpiresAt && new Date(company.aiqfomeTokenExpiresAt).getTime() <= Date.now() + 60_000) { const refreshed = await this.refreshToken(companyId); return refreshed.access_token; } return company.aiqfomeAccessToken; }
 
   private parseState(state: string) {
     const [companyId, signature] = String(state || '').split('.');
@@ -259,4 +299,26 @@ export class AiqfomeAuthService {
       updatedAt: addHours(new Date(), -3),
     } as any);
   }
+
+  private async createPendingAuthorization(tokenData: any) {
+    const expiresIn = Number(tokenData?.expires_in || 3600);
+    const scope = String(tokenData?.scope || '').trim();
+    const scopes = scope.split(/[\s,]+/).filter(Boolean);
+    const createdAt = new Date();
+    const pending = this.pendingAuthorizationRepository.create({
+      id: randomUUID(),
+      accessToken: tokenData?.access_token,
+      refreshToken: tokenData?.refresh_token,
+      scope,
+      scopes,
+      tokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
+      createdAt,
+      expiresAt: new Date(createdAt.getTime() + 30 * 60 * 1000),
+      status: 'pending',
+      source: 'geraldo_official_button',
+    });
+
+    return this.pendingAuthorizationRepository.save(pending);
+  }
+
 }

@@ -56,6 +56,12 @@ export class AiqfomeController {
     try {
       const result = await this.aiqfomeService.oauthCallback(code, state);
       const mapped = (result as any)?.success;
+      const pendingAuthorizationId = String((result as any)?.pendingAuthorizationId || '').trim();
+      if (!mapped && pendingAuthorizationId) {
+        const frontendUrl = String(process.env.FRONTEND_URL || '').trim().replace(/\/$/, '');
+        const pendingUrl = `${frontendUrl}/clientes-ifood?aiqfomePending=${pendingAuthorizationId}`;
+        return res.status(200).send(`<html><body style="font-family:Arial,sans-serif;padding:24px;"><h3>Autorização aiqfome recebida. Para concluir a integração, acesse o Rappidex e vincule esta autorização à sua loja.</h3><p><a href="${pendingUrl}">Concluir no Rappidex</a></p></body></html>`);
+      }
       const message = mapped
         ? 'Integração aiqfome concluída com sucesso. Pode fechar esta janela.'
         : (result as any)?.message ||
@@ -101,6 +107,18 @@ export class AiqfomeController {
   @UseGuards(JwtAuthGuard)
   updateConfig(@Param('companyId') companyId: string, @Body() body: UpdateAiqfomeConfigDto, @User() user: UserRequest) {
     return this.aiqfomeService.updateConfig(companyId, body, user);
+  }
+
+
+
+  @Post('oauth/complete-pending/:pendingId')
+  @UseGuards(JwtAuthGuard)
+  completePendingAuthorization(
+    @Param('pendingId') pendingId: string,
+    @Body() body: { companyId?: string },
+    @User() user: UserRequest,
+  ) {
+    return this.aiqfomeService.completePendingAuthorization(pendingId, body, user);
   }
 
   @Post('sync-order/:companyId/:orderId')

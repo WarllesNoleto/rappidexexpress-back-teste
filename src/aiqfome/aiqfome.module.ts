@@ -1,6 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { DeliveryEntity, UserEntity } from '../database/entities';
+import { AiqfomePendingAuthorizationEntity, DeliveryEntity, UserEntity } from '../database/entities';
 import { DeliveryModule } from '../delivery/delivery.module';
 import { AiqfomeAuthService } from './aiqfome-auth.service';
 import { AiqfomeController } from './aiqfome.controller';
@@ -10,7 +10,7 @@ import { AiqfomeOrderMapperService } from './aiqfome-order-mapper.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([UserEntity, DeliveryEntity]),
+    TypeOrmModule.forFeature([UserEntity, DeliveryEntity, AiqfomePendingAuthorizationEntity]),
     forwardRef(() => DeliveryModule),
   ],
   controllers: [AiqfomeController],
