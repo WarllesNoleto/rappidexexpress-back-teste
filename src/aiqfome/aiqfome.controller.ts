@@ -38,6 +38,17 @@ export class AiqfomeController {
     return res.redirect(authUrl);
   }
 
+
+  @Get('oauth/url/:companyId')
+  @UseGuards(JwtAuthGuard)
+  async oauthUrl(
+    @Param('companyId') companyId: string,
+    @User() user: UserRequest,
+  ) {
+    const authUrl = await this.aiqfomeService.oauthStart(companyId, user);
+    return { authUrl };
+  }
+
   @Get('oauth/callback')
   async oauthCallback(@Query() query: { code?: string; state?: string }, @Res() res: Response) {
     const { code, state } = query;
