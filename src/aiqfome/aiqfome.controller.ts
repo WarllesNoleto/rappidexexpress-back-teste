@@ -12,6 +12,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AiqfomeService } from './aiqfome.service';
 import { AiqfomeWebhookService } from './aiqfome-webhook.service';
 import { Response } from 'express';
@@ -26,7 +27,24 @@ export class AiqfomeController {
   constructor(
     private readonly aiqfomeService: AiqfomeService,
     private readonly webhookService: AiqfomeWebhookService,
+    private readonly configService: ConfigService,
   ) {}
+
+  private getFrontendUrl(): string {
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL');
+
+    if (frontendUrl?.trim()) {
+      return frontendUrl.trim().replace(/\/$/, '');
+    }
+
+    const frontendUrls = this.configService.get<string>('FRONTEND_URLS');
+
+    if (frontendUrls?.trim()) {
+      return frontendUrls.split(',')[0].trim().replace(/\/$/, '');
+    }
+
+    return 'https://rappidex-express.vercel.app';
+  }
 
   @Get('oauth/start/:companyId')
   @UseGuards(JwtAuthGuard)
@@ -58,7 +76,7 @@ export class AiqfomeController {
       const mapped = (result as any)?.success;
       const pendingAuthorizationId = String((result as any)?.pendingAuthorizationId || '').trim();
       if (!mapped && pendingAuthorizationId) {
-        const frontendUrl = String(process.env.FRONTEND_URL || '').trim().replace(/\/$/, '');
+        const frontendUrl = this.getFrontendUrl();
         const pendingUrl = `${frontendUrl}/clientes-ifood?aiqfomePending=${pendingAuthorizationId}`;
         return res.status(200).send(`<html><body style="font-family:Arial,sans-serif;padding:24px;"><h3>Autorização aiqfome recebida. Para concluir a integração, acesse o Rappidex e vincule esta autorização à sua loja.</h3><p><a href="${pendingUrl}">Concluir no Rappidex</a></p></body></html>`);
       }
