@@ -276,7 +276,7 @@ export class UserService {
     }
 
     this.ifoodImportService
-      .retryPendingImportsForCompany(company.id)
+      .importPendingOrdersForMerchant(String(company.ifoodMerchantId || '').trim(), company.id)
       .then(() =>
         this.logger.log(
           `ifood_initial_sync_triggered companyId=${company.id} merchant=${this.maskMerchantId(company.ifoodMerchantId)}`,
