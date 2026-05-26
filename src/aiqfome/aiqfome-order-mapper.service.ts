@@ -16,22 +16,64 @@ export class AiqfomeOrderMapperService {
     payload?: any,
     usedPayloadFallback = false,
   ): Partial<DeliveryEntity> {
-    const total = String(order?.total ?? order?.payment?.total ?? '0');
-    const address = order?.delivery?.address || order?.address || order?.customer?.address || 'Endereço não informado no webhook';
-    if (!order?.customer?.name)
+    const customer = order?.customer || order?.client || order?.user || {};
+    const delivery = order?.delivery || order?.shipping || {};
+    const payment = order?.payment || {};
+    const addressData = delivery?.address || order?.address || customer?.address || {};
+    const address =
+      typeof addressData === 'string'
+        ? addressData
+        : [
+            addressData?.street || addressData?.address || addressData?.line1 || '',
+            addressData?.number || '',
+            addressData?.complement || '',
+          ]
+            .filter(Boolean)
+            .join(', ') || 'Endereço não informado no webhook';
+    const total = String(
+      order?.total ??
+        order?.total_value ??
+        order?.amount ??
+        payment?.total ??
+        payment?.value ??
+        '0',
+    );
+    if (!customer?.name)
       this.logger.warn('[AiqfomeWebhook] Campo ausente: customer.name');
+    const paymentMethod =
+      payment?.method ||
+      payment?.type ||
+      payment?.name ||
+      order?.payment_method ||
+      order?.paymentType ||
+      '';
+    const note =
+      order?.observation ||
+      order?.notes ||
+      order?.customer_note ||
+      order?.comment ||
+      '';
     return {
       id: randomUUID(),
-      clientName: order?.customer?.name || 'Cliente aiqfome',
-      clientPhone: order?.customer?.phone || '',
+      clientName: customer?.name || 'Cliente aiqfome',
+      clientPhone: customer?.phone || customer?.phone_number || customer?.cellphone || '',
       value: total,
       payment: 'PAGO' as any,
-      observation: [order?.observation || order?.notes || '', order?.payment?.method || order?.payment?.type || order?.payment_method || '']
+      observation: [note, paymentMethod]
         .filter(Boolean)
         .join(' | '),
       clientAddress: address,
-      addressNeighborhood: order?.delivery?.neighborhood || order?.address?.neighborhood || order?.neighborhood || '',
-      addressReference: order?.delivery?.reference || order?.address?.reference || order?.reference || order?.complement || '',
+      addressNeighborhood:
+        delivery?.neighborhood ||
+        addressData?.neighborhood ||
+        order?.neighborhood ||
+        '',
+      addressReference:
+        delivery?.reference ||
+        addressData?.reference ||
+        order?.reference ||
+        order?.complement ||
+        '',
       establishment: company,
       createdBy: company.id,
       status: StatusDelivery.PENDING,
