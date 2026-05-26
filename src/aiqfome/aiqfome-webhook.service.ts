@@ -50,9 +50,7 @@ export class AiqfomeWebhookService {
         headers?.['x-aiqfome-secret'] ||
         headers?.['x-webhook-secret'],
     );
-    const expectedSecret = normalize(
-      company?.aiqfomeWebhookSecret || process.env.AIQFOME_WEBHOOK_SECRET || '',
-    );
+    const expectedSecret = normalize(process.env.AIQFOME_WEBHOOK_SECRET || '');
     if (expectedSecret && receivedSecret.trim() !== expectedSecret.trim())
       throw new UnauthorizedException('Webhook não autorizado');
 
@@ -72,6 +70,10 @@ export class AiqfomeWebhookService {
       return { ok: true };
     if (!company.aiqfomeAccessToken) {
       this.logger.error('[AiqfomeWebhook] Token ausente para store_id');
+      return { ok: true };
+    }
+
+    if (event !== 'ready-order') {
       return { ok: true };
     }
 

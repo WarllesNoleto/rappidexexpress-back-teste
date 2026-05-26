@@ -60,10 +60,33 @@ export class UserResult {
   @Expose()
   ifoodOrdersAvailable: number;
 
+  @Expose()
+  aiqfomeEnabled?: boolean;
+
+  @Expose()
+  aiqfomeStoreId?: string;
+
+  @Expose()
+  aiqfomeIntegrationStatus?: string;
+
+  @Expose()
+  aiqfomeTokenExpiresAt?: Date;
+
+  @Expose()
+  aiqfomeConnected?: boolean;
+
+  @Expose()
+  hasAiqfomeAccessToken?: boolean;
+
   public static fromEntity(user: UserEntity) {
     return plainToClass<UserResult, UserResult>(UserResult, {
       ...user,
       usesExternalIfoodPdv: Boolean(user?.usesExternalIfoodPdv),
+      aiqfomeConnected:
+        Boolean(user?.aiqfomeAccessToken) &&
+        Boolean(user?.aiqfomeTokenExpiresAt) &&
+        new Date(user.aiqfomeTokenExpiresAt).getTime() > Date.now(),
+      hasAiqfomeAccessToken: Boolean(user?.aiqfomeAccessToken),
     } as UserResult, {
       excludeExtraneousValues: true,
     });

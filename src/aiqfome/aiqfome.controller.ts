@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Headers,
   HttpCode,
@@ -9,10 +10,15 @@ import {
   Put,
   Query,
   Res,
+  UseGuards,
 } from '@nestjs/common';
 import { AiqfomeService } from './aiqfome.service';
 import { AiqfomeWebhookService } from './aiqfome-webhook.service';
 import { Response } from 'express';
+import { JwtAuthGuard } from '../authenticator/guards/jwt-auth.guard';
+import { User } from '../shared/decorators';
+import { UserRequest } from '../shared/interfaces';
+import { onlyForAdmin } from '../shared/utils/permissions.function';
 
 @Controller('aiqfome')
 export class AiqfomeController {
@@ -22,8 +28,13 @@ export class AiqfomeController {
   ) {}
 
   @Get('oauth/start/:companyId')
-  async oauthStart(@Res() res: Response, @Param('companyId') companyId: string) {
-    const authUrl = await this.aiqfomeService.oauthStart(companyId);
+  @UseGuards(JwtAuthGuard)
+  async oauthStart(
+    @Res() res: Response,
+    @Param('companyId') companyId: string,
+    @User() user: UserRequest,
+  ) {
+    const authUrl = await this.aiqfomeService.oauthStart(companyId, user);
     return res.redirect(authUrl);
   }
 
@@ -43,8 +54,12 @@ export class AiqfomeController {
   }
 
   @Get('status/:companyId')
-  status(@Param('companyId') companyId: string) {
-    return this.aiqfomeService.getStatus(companyId);
+  @UseGuards(JwtAuthGuard)
+  status(@Param('companyId') companyId: string, @User() user: UserRequest) {
+    if (!onlyForAdmin(user.type) && user.id !== companyId) {
+      throw new ForbiddenException('Acesso negado.');
+    }
+    return this.aiqfomeService.getStatus(companyId, user);
   }
 
   @Post('test-connection/:companyId')
@@ -63,10 +78,12 @@ export class AiqfomeController {
   }
 
   @Post('sync-order/:companyId/:orderId')
+  @UseGuards(JwtAuthGuard)
   syncOrder(
     @Param('companyId') companyId: string,
     @Param('orderId') orderId: string,
+    @User() user: UserRequest,
   ) {
-    return this.aiqfomeService.syncOrder(companyId, orderId);
+    return this.aiqfomeService.syncOrder(companyId, orderId, user);
   }
 }

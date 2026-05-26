@@ -1,11 +1,17 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { AxiosError } from 'axios';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
 import axios from 'axios';
-import { UserEntity } from '../database/entities';
+import { DeliveryEntity, UserEntity } from '../database/entities';
 import { AiqfomeAuthService } from './aiqfome-auth.service';
+import { UserRequest } from '../shared/interfaces';
+import { UserType, StatusDelivery } from '../shared/constants/enums.constants';
+import { AiqfomeOrderMapperService } from './aiqfome-order-mapper.service';
+import { OrdersGateway } from '../gateway/orders.gateway';
+import { DeliveryResult } from '../delivery/dto';
+import { addHours } from 'date-fns';
 
 @Injectable()
 export class AiqfomeService {
@@ -16,9 +22,14 @@ export class AiqfomeService {
     private readonly config: ConfigService,
     @InjectRepository(UserEntity)
     private readonly userRepository: MongoRepository<UserEntity>,
+    @InjectRepository(DeliveryEntity)
+    private readonly deliveryRepository: MongoRepository<DeliveryEntity>,
+    private readonly mapper: AiqfomeOrderMapperService,
+    private readonly gateway: OrdersGateway,
   ) {}
 
-  oauthStart(companyId: string) {
+  async oauthStart(companyId: string, user: UserRequest) {
+    this.ensureCompanyAccess(user, companyId);
     return this.authService.buildOAuthUrlByCompany(companyId);
   }
 
@@ -111,7 +122,8 @@ export class AiqfomeService {
     }
   }
 
-  async getStatus(companyId: string) {
+  async getStatus(companyId: string, user?: UserRequest) {
+    if (user) this.ensureCompanyAccess(user, companyId);
     const c = await this.userRepository.findOneBy({ id: companyId });
     const scopes = Array.isArray(c?.aiqfomeScopes)
       ? c.aiqfomeScopes
@@ -120,10 +132,15 @@ export class AiqfomeService {
 
     return {
       companyId,
-      enabled: !!c?.aiqfomeEnabled,
-      storeId: c?.aiqfomeStoreId || null,
-      integrationStatus: c?.aiqfomeIntegrationStatus || 'not_configured',
-      hasAccessToken: !!c?.aiqfomeAccessToken,
+      aiqfomeEnabled: !!c?.aiqfomeEnabled,
+      aiqfomeStoreId: c?.aiqfomeStoreId || null,
+      aiqfomeIntegrationStatus: c?.aiqfomeIntegrationStatus || 'not_configured',
+      aiqfomeTokenExpiresAt: c?.aiqfomeTokenExpiresAt || null,
+      hasAiqfomeAccessToken: !!c?.aiqfomeAccessToken,
+      aiqfomeConnected:
+        !!c?.aiqfomeAccessToken &&
+        !!c?.aiqfomeTokenExpiresAt &&
+        new Date(c.aiqfomeTokenExpiresAt).getTime() > Date.now(),
       hasOrderReadScope,
       aiqfomeScopes: scopes,
       reauthorizationRequired: !hasOrderReadScope,
@@ -157,20 +174,52 @@ export class AiqfomeService {
     await this.userRepository.update({ id: companyId }, {
       aiqfomeEnabled: Boolean(body?.aiqfomeEnabled),
       aiqfomeStoreId: String(body?.aiqfomeStoreId || current.aiqfomeStoreId || '').trim(),
-      aiqfomeWebhookSecret: body?.aiqfomeWebhookSecret ? String(body.aiqfomeWebhookSecret).trim() : current.aiqfomeWebhookSecret,
       aiqfomeAccessToken: body?.aiqfomeAccessToken ? String(body.aiqfomeAccessToken).trim() : current.aiqfomeAccessToken,
       aiqfomeIntegrationStatus: Boolean(body?.aiqfomeEnabled) ? 'connected' : 'not_configured',
     } as any);
     return this.getStatus(companyId);
   }
 
-  async syncOrder(companyId: string, orderId: string) {
+  async syncOrder(companyId: string, orderId: string, user: UserRequest) {
+    this.ensureCompanyAccess(user, companyId);
     const c = await this.userRepository.findOneBy({ id: companyId });
     if (!c) return { success: false, message: 'Empresa não encontrada' };
     const order = await this.fetchOrderByCompany(c, orderId);
     if (!order) {
       return { success: false, message: 'Pedido aiqfome não encontrado ou não disponível na API V2' };
     }
-    return { success: true, order };
+    const storeId = String(c.aiqfomeStoreId || '').trim();
+    const existingDelivery = await this.deliveryRepository.findOneBy({
+      $or: [
+        { aiqfomeOrderId: orderId, aiqfomeStoreId: storeId } as any,
+        { externalOrderId: orderId, externalPlatform: 'aiqfome' } as any,
+      ] as any,
+    } as any);
+    let delivery = existingDelivery as any;
+    if (delivery) {
+      delivery.logisticsStatus = String(order?.status || delivery.logisticsStatus || '').trim();
+      delivery.updatedAt = addHours(new Date(), -3);
+    } else {
+      delivery = this.mapper.toDelivery(order, c, orderId, storeId) as any;
+      delivery.status = StatusDelivery.PENDING;
+    }
+
+    const saved = await this.deliveryRepository.save(delivery as any);
+    if (existingDelivery) {
+      this.gateway.emitDeliveryUpdated(DeliveryResult.fromEntity(saved as any), c.cityId);
+    } else {
+      this.gateway.emitDeliveryCreated(DeliveryResult.fromEntity(saved as any), c.cityId);
+    }
+    return { success: true, delivery: DeliveryResult.fromEntity(saved as any), order };
+  }
+
+  private ensureCompanyAccess(user: UserRequest, companyId: string) {
+    const isAdmin = user.type === UserType.ADMIN || user.type === UserType.SUPERADMIN;
+    if (isAdmin) return;
+    if (user.type === UserType.SHOPKEEPER || user.type === UserType.SHOPKEEPERADMIN) {
+      if (user.id === companyId) return;
+      throw new ForbiddenException('Acesso negado.');
+    }
+    throw new ForbiddenException('Acesso negado.');
   }
 }
