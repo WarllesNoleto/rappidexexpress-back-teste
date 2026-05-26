@@ -46,8 +46,10 @@ export class AiqfomeService {
   async fetchOrderByCompany(company: UserEntity, orderId: string) {
     const storeId = String(company?.aiqfomeStoreId || '').trim();
     const baseUrl = String(this.config.get('AIQFOME_API_BASE_URL') || 'https://plataforma.aiqfome.com').trim().replace(/\/$/, '');
-    const path = `/api/v2/orders/${encodeURIComponent(orderId)}`;
+    const path = `/orders/${encodeURIComponent(orderId)}`;
+    const searchPath = `/orders/search?filter[store_id]=${encodeURIComponent(storeId)}&filter[order_id]=${encodeURIComponent(orderId)}`;
     const url = `${baseUrl}${path}`;
+    const searchUrl = `${baseUrl}${searchPath}`;
     const now = Date.now();
     const expiresAt = company?.aiqfomeTokenExpiresAt ? new Date(company.aiqfomeTokenExpiresAt).getTime() : 0;
     const tokenExpired = !expiresAt || expiresAt <= now + 60_000;
@@ -100,16 +102,16 @@ export class AiqfomeService {
       }
     }
 
+    const requestHeaders = {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'User-Agent': 'RappidexExpress/1.0',
+      ...(storeId ? { 'x-store-id': storeId, 'x-aiqfome-store-id': storeId } : {}),
+    };
+
     try {
-      const res = await axios.get(url, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-          'User-Agent': 'RappidexExpress/1.0',
-          ...(storeId ? { 'x-store-id': storeId, 'x-aiqfome-store-id': storeId } : {}),
-        },
-      });
+      const res = await axios.get(url, { headers: requestHeaders });
       return res.data;
     } catch (rawError) {
       const error = rawError as AxiosError;
@@ -136,6 +138,40 @@ export class AiqfomeService {
         apiMessage: typeof apiMessage === 'string' ? apiMessage.slice(0, 300) : JSON.stringify(apiMessage || '').slice(0, 300),
       }));
 
+      try {
+        const fallbackRes = await axios.get(searchUrl, { headers: requestHeaders });
+        const fallbackData = fallbackRes?.data;
+        const fallbackOrder = Array.isArray(fallbackData?.data)
+          ? fallbackData.data[0]
+          : Array.isArray(fallbackData?.orders)
+            ? fallbackData.orders[0]
+            : fallbackData?.order || fallbackData?.data || fallbackData;
+        this.logger.log('[AiqfomeWebhook] fallback de busca do pedido via search executado com sucesso', JSON.stringify({
+          baseUrl,
+          path: searchPath,
+          storeId,
+          orderId,
+          statusCode: fallbackRes?.status || null,
+          contentType: String(fallbackRes?.headers?.['content-type'] || '').trim() || null,
+          tokenExpired,
+          hasReadScope,
+        }));
+        return fallbackOrder || null;
+      } catch (fallbackError: any) {
+        const fallbackStatusCode = fallbackError?.response?.status || null;
+        const fallbackContentType = String(fallbackError?.response?.headers?.['content-type'] || '').trim() || null;
+        this.logger.error('[AiqfomeWebhook] fallback de busca do pedido via search falhou', JSON.stringify({
+          baseUrl,
+          path: searchPath,
+          storeId,
+          orderId,
+          statusCode: fallbackStatusCode,
+          contentType: fallbackContentType,
+          tokenExpired,
+          hasReadScope,
+        }));
+      }
+
       if (statusCode === 403) {
         throw new ForbiddenException(
           'A API aiqfome negou acesso ao pedido. Refaça a conexão pelo botão Reconectar aiqfome no Rappidex e gere um pedido novo sem abrir manualmente no Geraldo antes da importação.',
@@ -157,20 +193,21 @@ export class AiqfomeService {
 
     const storeId = String(company?.aiqfomeStoreId || '').trim();
     const baseUrl = String(this.config.get('AIQFOME_API_BASE_URL') || 'https://plataforma.aiqfome.com').trim().replace(/\/$/, '');
-    const path = `/api/v2/orders/${encodeURIComponent(orderId)}`;
+    const path = `/orders/${encodeURIComponent(orderId)}`;
+    const searchPath = `/orders/search?filter[store_id]=${encodeURIComponent(storeId)}&filter[order_id]=${encodeURIComponent(orderId)}`;
     const url = `${baseUrl}${path}`;
+    const searchUrl = `${baseUrl}${searchPath}`;
     const token = await this.authService.getValidAccessToken(companyId);
 
     try {
-      const res = await axios.get(url, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-          'User-Agent': 'RappidexExpress/1.0',
-          ...(storeId ? { 'x-store-id': storeId, 'x-aiqfome-store-id': storeId } : {}),
-        },
-      });
+      const requestHeaders = {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'RappidexExpress/1.0',
+        ...(storeId ? { 'x-store-id': storeId, 'x-aiqfome-store-id': storeId } : {}),
+      };
+      const res = await axios.get(url, { headers: requestHeaders });
       const data = res?.data;
       return {
         statusCode: res.status,
@@ -183,6 +220,24 @@ export class AiqfomeService {
       const statusCode = error?.response?.status || 500;
       const contentType = String(error?.response?.headers?.['content-type'] || '').trim() || null;
       const data = error?.response?.data;
+      try {
+        const fallbackRes = await axios.get(searchUrl, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            'User-Agent': 'RappidexExpress/1.0',
+            ...(storeId ? { 'x-store-id': storeId, 'x-aiqfome-store-id': storeId } : {}),
+          },
+        });
+        return {
+          statusCode: fallbackRes.status,
+          contentType: String(fallbackRes.headers?.['content-type'] || '').trim() || null,
+          hasOrder: !!fallbackRes?.data,
+          message: 'Pedido obtido com sucesso via fallback de busca.',
+          topLevelKeys: fallbackRes?.data && typeof fallbackRes.data === 'object' ? Object.keys(fallbackRes.data).slice(0, 30) : [],
+        };
+      } catch {}
       return {
         statusCode,
         contentType,
