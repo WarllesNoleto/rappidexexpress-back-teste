@@ -2,6 +2,13 @@ import { ObjectId } from 'mongodb';
 import { Column, Entity, Index, ObjectIdColumn } from 'typeorm';
 import { Permissions, UserType } from '../../shared/constants/enums.constants';
 
+export type IfoodMerchantConfig = {
+  merchantId: string;
+  name: string;
+  enabled: boolean;
+  pickupAddress?: string;
+};
+
 @Entity()
 export class UserEntity {
   @ObjectIdColumn()
@@ -67,6 +74,9 @@ export class UserEntity {
   ifoodMerchantId?: string;
 
   @Column({ nullable: true })
+  ifoodMerchants?: IfoodMerchantConfig[];
+
+  @Column({ nullable: true })
   ifoodClientId?: string;
 
   @Column({ nullable: true })
@@ -80,36 +90,6 @@ export class UserEntity {
 
   @Column({ default: 0 })
   ifoodOrdersAvailable: number;
-
-  @Column({ default: false })
-  aiqfomeEnabled?: boolean;
-
-  @Column({ nullable: true })
-  aiqfomeStoreId?: string;
-
-  @Column({ nullable: true })
-  aiqfomeWebhookSecret?: string;
-
-  @Column({ nullable: true })
-  aiqfomeWebhookUrl?: string;
-
-  @Column({ nullable: true })
-  aiqfomeAccessToken?: string;
-
-  @Column({ nullable: true })
-  aiqfomeRefreshToken?: string;
-
-  @Column({ nullable: true })
-  aiqfomeScope?: string;
-
-  @Column({ nullable: true })
-  aiqfomeScopes?: string[];
-
-  @Column({ nullable: true })
-  aiqfomeTokenExpiresAt?: Date;
-
-  @Column({ nullable: true })
-  aiqfomeIntegrationStatus?: string;
 
   @Column()
   createdAt: Date;

@@ -78,8 +78,9 @@ export class UserService {
     const usesExternalIfoodPdv = useIfoodIntegration
       ? Boolean(data.usesExternalIfoodPdv)
       : false;
+    const ifoodMerchants = this.normalizeIfoodMerchants(data.ifoodMerchants);
     const ifoodMerchantId = useIfoodIntegration
-      ? (data.ifoodMerchantId?.trim() ?? '')
+      ? (data.ifoodMerchantId?.trim() ?? ifoodMerchants[0]?.merchantId ?? '')
       : '';
 
     try {
@@ -92,6 +93,7 @@ export class UserService {
         useIfoodIntegration,
         usesExternalIfoodPdv,
         ifoodMerchantId,
+        ifoodMerchants,
         ifoodClientId: '',
         ifoodClientSecret: '',
         ifoodOrdersReleased: Number(data.ifoodOrdersReleased || 0),
@@ -105,6 +107,7 @@ export class UserService {
       this.triggerIfoodInitialSync(newUser, {
         useIfoodIntegrationChanged: true,
         ifoodMerchantIdChanged: true,
+        ifoodMerchantsChanged: true,
         isActiveChanged: true,
         usesExternalIfoodPdvChanged: true,
       });
@@ -210,8 +213,17 @@ export class UserService {
         : false;
 
       const ifoodMerchantId = useIfoodIntegration
-        ? (data.ifoodMerchantId ?? userToUpdate.ifoodMerchantId ?? '').trim()
+        ? (
+            data.ifoodMerchantId ??
+            userToUpdate.ifoodMerchantId ??
+            data.ifoodMerchants?.[0]?.merchantId ??
+            userToUpdate.ifoodMerchants?.[0]?.merchantId ??
+            ''
+          ).trim()
         : '';
+      const ifoodMerchants = this.normalizeIfoodMerchants(
+        data.ifoodMerchants ?? userToUpdate.ifoodMerchants,
+      );
 
       const changedUser = await this.userRepository.save({
         ...userToUpdate,
@@ -220,6 +232,7 @@ export class UserService {
         useIfoodIntegration,
         usesExternalIfoodPdv,
         ifoodMerchantId,
+        ifoodMerchants,
         ifoodClientId: '',
         ifoodClientSecret: '',
         ifoodOrdersReleased:
@@ -236,6 +249,9 @@ export class UserService {
           useIfoodIntegration !== Boolean(userToUpdate.useIfoodIntegration),
         ifoodMerchantIdChanged:
           ifoodMerchantId !== String(userToUpdate.ifoodMerchantId || '').trim(),
+        ifoodMerchantsChanged:
+          JSON.stringify(ifoodMerchants) !==
+          JSON.stringify(this.normalizeIfoodMerchants(userToUpdate.ifoodMerchants)),
         isActiveChanged:
           Boolean(changedUser.isActive) !== Boolean(userToUpdate.isActive),
         usesExternalIfoodPdvChanged:
@@ -255,6 +271,7 @@ export class UserService {
       ifoodMerchantIdChanged: boolean;
       isActiveChanged: boolean;
       usesExternalIfoodPdvChanged: boolean;
+      ifoodMerchantsChanged: boolean;
     },
   ) {
     const hasRelevantChange =
@@ -262,15 +279,16 @@ export class UserService {
       changes.ifoodMerchantIdChanged ||
       changes.isActiveChanged ||
       changes.usesExternalIfoodPdvChanged;
+    const hasMerchantsChanged = changes.ifoodMerchantsChanged;
 
-    if (!hasRelevantChange) {
+    if (!hasRelevantChange && !hasMerchantsChanged) {
       return;
     }
 
     if (
       !company.useIfoodIntegration ||
       !company.isActive ||
-      !String(company.ifoodMerchantId || '').trim()
+      !this.getActiveMerchantIds(company).length
     ) {
       return;
     }
@@ -279,12 +297,12 @@ export class UserService {
       .retryPendingImportsForCompany(company.id)
       .then(() =>
         this.logger.log(
-          `ifood_initial_sync_triggered companyId=${company.id} merchant=${this.maskMerchantId(company.ifoodMerchantId)}`,
+          `ifood_initial_sync_triggered companyId=${company.id} merchants=${this.getActiveMerchantIds(company).map((merchantId) => this.maskMerchantId(merchantId)).join(',')}`,
         ),
       )
       .catch((error) =>
         this.logger.error(
-          `ifood_initial_sync_failed companyId=${company.id} merchant=${this.maskMerchantId(company.ifoodMerchantId)} error=${error?.message || error}`,
+          `ifood_initial_sync_failed companyId=${company.id} merchants=${this.getActiveMerchantIds(company).map((merchantId) => this.maskMerchantId(merchantId)).join(',')} error=${error?.message || error}`,
         ),
       );
   }
@@ -295,6 +313,31 @@ export class UserService {
       return 'n/a';
     }
     return `***${normalized.slice(-4)}`;
+  }
+
+  private normalizeIfoodMerchants(merchants: any): Array<any> {
+    if (!Array.isArray(merchants)) {
+      return [];
+    }
+    return merchants
+      .map((merchant) => ({
+        merchantId: String(merchant?.merchantId || '').trim(),
+        name: String(merchant?.name || '').trim(),
+        enabled: merchant?.enabled !== false,
+        pickupAddress: String(merchant?.pickupAddress || '').trim() || undefined,
+      }))
+      .filter((merchant) => merchant.merchantId);
+  }
+
+  private getActiveMerchantIds(company: UserEntity): string[] {
+    const fromList = this.normalizeIfoodMerchants(company.ifoodMerchants)
+      .filter((merchant) => merchant.enabled)
+      .map((merchant) => merchant.merchantId);
+    if (fromList.length) {
+      return fromList;
+    }
+    const legacy = String(company.ifoodMerchantId || '').trim();
+    return legacy ? [legacy] : [];
   }
 
   private ensureCityAccess(requester: UserEntity, resourceCityId: string) {

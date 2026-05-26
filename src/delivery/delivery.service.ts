@@ -58,7 +58,12 @@ export class DeliveryService implements OnModuleInit {
   private async syncIfoodOnCourseIfNeeded(
     previousDelivery: DeliveryEntity,
     nextDelivery: DeliveryEntity,
+    orderId?: string,
+    merchantId?: string,
   ) {
+    void orderId;
+    void merchantId;
+
     return this.syncIfoodIfNeeded(previousDelivery, nextDelivery, {
       status: StatusDelivery.ONCOURSE,
     } as UpdateDeliveryDto);
@@ -629,6 +634,7 @@ export class DeliveryService implements OnModuleInit {
         ifoodOrderId: ifoodLink?.ifoodOrderId ?? null,
         ifoodDisplayId: ifoodLink?.ifoodDisplayId ?? null,
         ifoodMerchantId: ifoodLink?.merchantId ?? null,
+        ifoodMerchantName: ifoodLink?.merchantName ?? null,
       };
     });
 
@@ -735,13 +741,24 @@ export class DeliveryService implements OnModuleInit {
 
     let changedDelivery: Record<string, any> = {};
 
-    if (
+    const isAdminUser =
       userFinded.type === UserType.ADMIN ||
-      userFinded.type === UserType.SUPERADMIN
-    ) {
+      userFinded.type === UserType.SUPERADMIN;
+
+    const isShopkeeperUser =
+      userFinded.type === UserType.SHOPKEEPER ||
+      userFinded.type === UserType.SHOPKEEPERADMIN;
+
+    if (isAdminUser || isShopkeeperUser) {
       changedDelivery = { ...deliveryFinded, ...deliveryData };
 
       if (deliveryData.establishmentId) {
+        if (!isAdminUser) {
+          throw new UnauthorizedException(
+            'Você não tem permissão para alterar o estabelecimento da entrega.',
+          );
+        }
+
         establishmentFinded = await this.findOneUserById(
           deliveryData.establishmentId,
         );
@@ -750,12 +767,13 @@ export class DeliveryService implements OnModuleInit {
 
       if (normalizedMotoboyId) {
         motoboyFinded = await this.findOneUserById(normalizedMotoboyId);
+
+        if (motoboyFinded.type !== UserType.MOTOBOY) {
+          throw new BadRequestException('Usuário selecionado não é motoboy.');
+        }
+
         this.ensureCityAccess(userFinded, motoboyFinded.cityId);
       }
-    }
-
-    if (userFinded.type === UserType.SHOPKEEPER) {
-      changedDelivery = { ...deliveryFinded, ...deliveryData };
     }
 
     if (userFinded.type === UserType.MOTOBOY) {
@@ -866,12 +884,19 @@ export class DeliveryService implements OnModuleInit {
       }
     }
 
+    if (!Object.keys(changedDelivery).length) {
+      throw new UnauthorizedException(
+        'Você não tem permissão para atualizar esta entrega.',
+      );
+    }
+
     if (this.isObservationOnlyUpdate(deliveryData)) {
-      const deliveryUpdated = await this.deliveryRepository.save(
-        this.buildPersistableDelivery({
+      const deliveryUpdated = await this.persistDeliveryUpdate(
+        deliveryFinded.id,
+        {
           ...changedDelivery,
           updatedAt: addHours(new Date(), -3),
-        }),
+        },
       );
 
       this.ordersGateway.emitDeliveryUpdated(
@@ -913,17 +938,8 @@ export class DeliveryService implements OnModuleInit {
               );
       } catch (error: any) {
         this.logger.error(
-          `Claim atômico concluído para delivery ${deliveryFinded.id}, mas falhou sincronização iFood no fluxo PENDENTE -> ACAMINHO. Iniciando rollback condicional para PENDENTE.`,
+          `Claim atômico concluído para delivery ${deliveryFinded.id}, mas falhou sincronização iFood no fluxo PENDENTE -> ACAMINHO. Mantendo atribuição local e registrando para retentativa. status=${error?.response?.status || error?.status || 'N/A'} message=${error?.response?.data?.message || error?.message || error}`,
           error?.stack || error,
-        );
-
-        await this.rollbackPendingClaimAfterIfoodSyncFailure(
-          deliveryFinded.id,
-          motoboyFinded.id,
-        );
-
-        throw new InternalServerErrorException(
-          'Não foi possível sincronizar com o iFood. Tente aceitar novamente.',
         );
       }
 
@@ -960,15 +976,22 @@ export class DeliveryService implements OnModuleInit {
       }
 
       try {
-        deliveryUpdated = await this.deliveryRepository.save(
-          this.buildPersistableDelivery({
+        deliveryUpdated = await this.persistDeliveryUpdate(
+          deliveryFinded.id,
+          {
             ...changedDelivery,
             ...ifoodSyncFlags,
             updatedAt: addHours(new Date(), -3),
-          }),
+          },
         );
-      } catch (error) {
-        return error;
+      } catch (error: any) {
+        this.logger.error(
+          `Falha ao salvar entrega ${deliveryFinded.id} no updateDelivery. status=${error?.response?.status || error?.status || 'N/A'} message=${error?.response?.data?.message || error?.message || error}`,
+          error?.stack || error,
+        );
+        throw new InternalServerErrorException(
+          'Não foi possível atualizar o pedido. Tente novamente.',
+        );
       }
 
       if (shouldSyncInBackground) {
@@ -1577,6 +1600,8 @@ export class DeliveryService implements OnModuleInit {
         const syncFlags = await this.syncIfoodOnCourseIfNeeded(
           delivery,
           updated,
+          ifoodLink.ifoodOrderId,
+          ifoodLink.merchantId,
         );
 
         if (Object.keys(syncFlags).length > 0) {
@@ -1585,10 +1610,10 @@ export class DeliveryService implements OnModuleInit {
         }
       } catch (error: any) {
         this.logger.error(
-          `Falha ao sincronizar ACAMINHO no iFood durante liberação da entrega ${delivery.id}. Verifique assignDriver/goingToOrigin. status=${error?.response?.status || error?.status || 'N/A'} message=${error?.response?.data?.message || error?.message || error}`,
+          `Falha ao sincronizar ACAMINHO no iFood durante liberação da entrega ${delivery.id}. orderId=${ifoodLink.ifoodOrderId} merchantId=${ifoodLink.merchantId} status=${error?.response?.status || error?.status || 'N/A'} message=${error?.response?.data?.message || error?.message || error}`,
           error?.stack || error,
         );
-        throw error;
+        // não bloquear liberação local por falha externa do iFood
       }
     }
 
@@ -1649,11 +1674,50 @@ export class DeliveryService implements OnModuleInit {
     delivery: DeliveryEntity,
     deliveryData: UpdateDeliveryDto,
   ) {
+    const requestedMotoboyId = this.normalizeMotoboyId(deliveryData.motoboyId);
+
     return (
       delivery.status === StatusDelivery.PENDING &&
-      deliveryData.status === StatusDelivery.ONCOURSE &&
-      !!this.normalizeMotoboyId(deliveryData.motoboyId)
+      !!requestedMotoboyId &&
+      (!deliveryData.status || deliveryData.status === StatusDelivery.ONCOURSE)
     );
+  }
+
+
+  private async persistDeliveryUpdate(
+    deliveryId: string,
+    data: Record<string, any>,
+  ) {
+    const currentDelivery = await this.deliveryRepository.findOneByOrFail({
+      id: deliveryId,
+    });
+
+    const sanitizedData = Object.fromEntries(
+      Object.entries(data || {}).filter(([, value]) => value !== undefined),
+    );
+
+    const persistable = this.buildPersistableDelivery({
+      ...currentDelivery,
+      ...sanitizedData,
+    });
+
+    const { internalId, id, ...setPayload } = persistable;
+
+    void internalId;
+    void id;
+
+    const result = await this.deliveryRepository.updateOne(
+      { id: deliveryId } as any,
+      { $set: setPayload } as any,
+    );
+
+    if (!result?.matchedCount) {
+      throw new BadRequestException('Entrega não encontrada.');
+    }
+
+    return await this.deliveryRepository.findOneByOrFail({
+      id: deliveryId,
+    });
   }
 
   private buildPersistableDelivery(data: Record<string, any>) {
@@ -1786,6 +1850,11 @@ export class DeliveryService implements OnModuleInit {
       updatedAt: dateForUse,
     });
 
+    const { internalId, id, ...claimPayload } = deliveryToPersist;
+
+    void internalId;
+    void id;
+
     const claimResult = await this.deliveryRepository.updateOne(
       {
         id: deliveryFinded.id,
@@ -1794,7 +1863,7 @@ export class DeliveryService implements OnModuleInit {
         $or: [{ motoboy: null }, { motoboy: { $exists: false } }],
       } as any,
       {
-        $set: deliveryToPersist,
+        $set: claimPayload,
       } as any,
     );
 

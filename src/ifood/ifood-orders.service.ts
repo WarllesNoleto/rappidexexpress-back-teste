@@ -687,7 +687,17 @@ export class IfoodOrdersService {
       const mappedUser = await this.userRepository.findOne({
         where: {
           useIfoodIntegration: true,
-          ifoodMerchantId: normalizedMerchantId,
+          $or: [
+            { ifoodMerchantId: normalizedMerchantId },
+            {
+              ifoodMerchants: {
+                $elemMatch: {
+                  merchantId: normalizedMerchantId,
+                  enabled: { $ne: false },
+                },
+              },
+            },
+          ],
           isActive: true,
         } as any,
         order: {

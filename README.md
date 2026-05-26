@@ -58,6 +58,16 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+## Lint
+
+```bash
+# execute from backend folder (uses local ESLint v8 + .eslintrc)
+$ cd rappidexexpress-back
+$ npm run lint
+```
+
+> Nota: rodar `npx eslint` na raiz do monorepo pode usar uma versão global (ex.: ESLint v10) e gerar aviso de `eslint.config.*` ausente, mesmo com lint local configurado no backend.
+
 ## Support
 
 Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).

@@ -130,6 +130,7 @@ export class IfoodImportService {
           ifoodOrderId: orderId,
           ifoodDisplayId: order?.displayId ?? orderId,
           merchantId: order?.merchant?.id ?? '',
+          merchantName: order?.merchant?.name ?? '',
           deliveryId: createdDelivery.id,
           shopkeeperId: targetShopkeeperId,
         });

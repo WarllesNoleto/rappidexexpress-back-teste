@@ -1,4 +1,5 @@
 import {
+  IsArray,
   IsBoolean,
   IsEnum,
   IsMongoId,
@@ -6,10 +7,17 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { UserType } from '../../shared/constants/enums.constants';
 
 export class UpdateUserDto {
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => IfoodMerchantDto)
+  ifoodMerchants?: IfoodMerchantDto[];
   @IsString()
   @IsOptional()
   name: string;
@@ -82,4 +90,16 @@ export class UpdateUserDto {
   @IsOptional()
   @IsNumber()
   ifoodOrdersAvailable?: number;
+}
+
+class IfoodMerchantDto {
+  @IsString()
+  merchantId: string;
+  @IsString()
+  name: string;
+  @IsBoolean()
+  enabled: boolean;
+  @IsOptional()
+  @IsString()
+  pickupAddress?: string;
 }

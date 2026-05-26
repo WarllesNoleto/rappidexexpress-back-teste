@@ -45,6 +45,7 @@ export class IfoodOrderLinkService {
     ifoodOrderId: string;
     ifoodDisplayId: string;
     merchantId: string;
+    merchantName?: string;
     deliveryId: string;
     shopkeeperId: string;
   }) {

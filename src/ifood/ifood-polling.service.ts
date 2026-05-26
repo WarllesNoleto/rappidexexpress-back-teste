@@ -304,12 +304,23 @@ export class IfoodPollingService {
       where: {
         useIfoodIntegration: true,
         isActive: true,
-        ifoodMerchantId: { $nin: [null, ''] },
       } as any,
     });
 
     const merchantIdsFromUsers = usersWithIfoodIntegration
-      .map((user) => String(user.ifoodMerchantId || '').trim())
+      .flatMap((user: any) => {
+        const merchantList = Array.isArray(user.ifoodMerchants)
+          ? user.ifoodMerchants
+              .filter((merchant) => merchant?.enabled !== false)
+              .map((merchant) => String(merchant?.merchantId || '').trim())
+              .filter(Boolean)
+          : [];
+        if (merchantList.length) {
+          return merchantList;
+        }
+        const legacyMerchantId = String(user.ifoodMerchantId || '').trim();
+        return legacyMerchantId ? [legacyMerchantId] : [];
+      })
       .filter(Boolean);
     const merchants = [
       rawPollingMerchants,
