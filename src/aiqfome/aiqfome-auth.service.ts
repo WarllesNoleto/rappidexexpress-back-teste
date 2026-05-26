@@ -60,7 +60,7 @@ export class AiqfomeAuthService {
       return {
         success: false,
         message:
-          'Integração autorizada, mas nenhuma empresa Rappidex está cadastrada com esta loja aiqfome. Cadastre o Store ID da loja no painel e tente novamente.',
+          'Integração autorizada, mas nenhuma empresa Rappidex está cadastrada com esta loja aiqfome. Cadastre o Store ID da loja no Rappidex e tente novamente.',
       };
     }
 
@@ -116,11 +116,29 @@ export class AiqfomeAuthService {
   private async resolveAuthorizedStoreId(accessToken?: string) {
     if (!accessToken) return '';
     const baseUrl = String(this.configService.get<string>('AIQFOME_API_BASE_URL') || 'https://plataforma.aiqfome.com').trim().replace(/\/$/, '');
-    try {
-      const res = await axios.get(`${baseUrl}/api/v2/stores`, { headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' } });
-      const firstStore = Array.isArray(res.data) ? res.data[0] : Array.isArray(res.data?.data) ? res.data.data[0] : res.data;
+    const headers = { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' };
+    const extractStoreId = (payload: any) => {
+      const firstStore = Array.isArray(payload)
+        ? payload[0]
+        : Array.isArray(payload?.data)
+          ? payload.data[0]
+          : payload?.data || payload;
       return String(firstStore?.id || firstStore?.storeId || firstStore?.store_id || '').trim();
+    };
+
+    try {
+      const res = await axios.get(`${baseUrl}/api/v2/stores`, { headers });
+      const fromStores = extractStoreId(res.data);
+      if (fromStores) return fromStores;
     } catch {
+      this.logger.warn('[AiqfomeAuth] não foi possível resolver storeId em /api/v2/stores');
+    }
+
+    try {
+      const res = await axios.get(`${baseUrl}/api/v2/store`, { headers });
+      return extractStoreId(res.data);
+    } catch {
+      this.logger.warn('[AiqfomeAuth] não foi possível resolver storeId em /api/v2/store');
       return '';
     }
   }
@@ -143,7 +161,7 @@ export class AiqfomeAuthService {
 
     await this.userRepository.update({ id: companyId }, {
       aiqfomeEnabled: true,
-      aiqfomeStoreId: String(existingStoreId || company?.aiqfomeStoreId || this.configService.get<string>('AIQFOME_DEFAULT_RAPIDDEX_STORE_ID') || '').trim(),
+      aiqfomeStoreId: String(existingStoreId || company?.aiqfomeStoreId || '').trim(),
       aiqfomeAccessToken: tokenData?.access_token,
       aiqfomeRefreshToken: tokenData?.refresh_token,
       aiqfomeScope: scope || undefined,

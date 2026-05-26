@@ -39,9 +39,18 @@ export class AiqfomeController {
   }
 
   @Get('oauth/callback')
-  oauthCallback(@Query() query: { code?: string; state?: string }) {
+  async oauthCallback(@Query() query: { code?: string; state?: string }, @Res() res: Response) {
     const { code, state } = query;
-    return this.aiqfomeService.oauthCallback(code, state);
+    try {
+      const result = await this.aiqfomeService.oauthCallback(code, state);
+      const mapped = (result as any)?.success;
+      const message = mapped
+        ? 'Integração aiqfome concluída com sucesso. Pode fechar esta janela.'
+        : 'Integração autorizada, mas nenhuma empresa Rappidex está cadastrada com esta loja aiqfome. Cadastre o Store ID da loja no Rappidex e tente novamente.';
+      return res.status(200).send(`<html><body style="font-family:Arial,sans-serif;padding:24px;"><h3>${message}</h3></body></html>`);
+    } catch {
+      return res.status(400).send('<html><body style="font-family:Arial,sans-serif;padding:24px;"><h3>Não foi possível concluir a integração aiqfome.</h3></body></html>');
+    }
   }
 
   @Post('webhook')
@@ -63,18 +72,21 @@ export class AiqfomeController {
   }
 
   @Post('test-connection/:companyId')
-  testConnection(@Param('companyId') companyId: string) {
-    return this.aiqfomeService.testConnection(companyId);
+  @UseGuards(JwtAuthGuard)
+  testConnection(@Param('companyId') companyId: string, @User() user: UserRequest) {
+    return this.aiqfomeService.testConnection(companyId, user);
   }
 
   @Post('register-webhook/:companyId')
-  registerWebhook(@Param('companyId') companyId: string) {
-    return this.aiqfomeService.registerWebhook(companyId);
+  @UseGuards(JwtAuthGuard)
+  registerWebhook(@Param('companyId') companyId: string, @User() user: UserRequest) {
+    return this.aiqfomeService.registerWebhook(companyId, user);
   }
 
   @Put('config/:companyId')
-  updateConfig(@Param('companyId') companyId: string, @Body() body: any) {
-    return this.aiqfomeService.updateConfig(companyId, body);
+  @UseGuards(JwtAuthGuard)
+  updateConfig(@Param('companyId') companyId: string, @Body() body: any, @User() user: UserRequest) {
+    return this.aiqfomeService.updateConfig(companyId, body, user);
   }
 
   @Post('sync-order/:companyId/:orderId')

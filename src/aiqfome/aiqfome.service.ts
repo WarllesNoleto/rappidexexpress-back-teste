@@ -150,14 +150,16 @@ export class AiqfomeService {
     };
   }
 
-  async testConnection(companyId: string) {
+  async testConnection(companyId: string, user: UserRequest) {
+    this.ensureCompanyAccess(user, companyId);
     const c = await this.userRepository.findOneBy({ id: companyId });
     if (!c) return { success: false };
     const token = await this.authService.getValidAccessToken(companyId).catch(() => '');
     return { success: !!token };
   }
 
-  async registerWebhook(companyId: string) {
+  async registerWebhook(companyId: string, user: UserRequest) {
+    this.ensureCompanyAccess(user, companyId);
     const c = await this.userRepository.findOneBy({ id: companyId });
     if (!c) return { success: false };
     const webhookUrl = String(this.config.get('AIQFOME_WEBHOOK_URL') || '').trim();
@@ -168,13 +170,14 @@ export class AiqfomeService {
     return { success: true, webhookUrl };
   }
 
-  async updateConfig(companyId: string, body: any) {
+  async updateConfig(companyId: string, body: any, user: UserRequest) {
+    this.ensureCompanyAccess(user, companyId);
     const current = await this.userRepository.findOneBy({ id: companyId });
     if (!current) return { success: false };
     await this.userRepository.update({ id: companyId }, {
       aiqfomeEnabled: Boolean(body?.aiqfomeEnabled),
       aiqfomeStoreId: String(body?.aiqfomeStoreId || current.aiqfomeStoreId || '').trim(),
-      aiqfomeAccessToken: body?.aiqfomeAccessToken ? String(body.aiqfomeAccessToken).trim() : current.aiqfomeAccessToken,
+      aiqfomeWebhookUrl: String(this.config.get('AIQFOME_WEBHOOK_URL') || current.aiqfomeWebhookUrl || '').trim(),
       aiqfomeIntegrationStatus: Boolean(body?.aiqfomeEnabled) ? 'connected' : 'not_configured',
     } as any);
     return this.getStatus(companyId);

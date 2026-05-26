@@ -23,8 +23,8 @@ export class AiqfomeWebhookService {
   ) {}
 
   async processWebhook(headers: Record<string, any>, payload: any) {
-    const storeId = String(payload?.store_id || payload?.storeId || '').trim();
-    const event = String(payload?.event || '').trim();
+    const storeId = String(payload?.store_id || payload?.storeId || payload?.store?.id || payload?.data?.store_id || payload?.data?.storeId || '').trim();
+    const event = String(payload?.event || payload?.type || '').trim();
     const orderId = String(
       payload?.data?.order_id ||
         payload?.data?.orderId ||
@@ -41,18 +41,21 @@ export class AiqfomeWebhookService {
       : null;
     this.logger.log(`[AiqfomeWebhook] Empresa encontrada: ${Boolean(company)}`);
 
-    const normalize = (v: any) =>
-      String(Array.isArray(v) ? v[0] : v || '')
-        .replace(/^Bearer\s+/i, '')
-        .trim();
-    const receivedSecret = normalize(
-      headers?.authorization ||
-        headers?.['x-aiqfome-secret'] ||
-        headers?.['x-webhook-secret'],
-    );
+    const normalize = (v: any, isAuthHeader = false) => {
+      const normalized = String(Array.isArray(v) ? v[0] : v || '').trim();
+      return isAuthHeader ? normalized.replace(/^Bearer\s+/i, '').trim() : normalized;
+    };
     const expectedSecret = normalize(process.env.AIQFOME_WEBHOOK_SECRET || '');
-    if (expectedSecret && receivedSecret.trim() !== expectedSecret.trim())
+    const candidates = [
+      normalize(headers?.authorization, true),
+      normalize(headers?.Authorization, true),
+      normalize(headers?.['x-aiqfome-secret']),
+      normalize(headers?.['x-webhook-secret']),
+    ].filter(Boolean);
+
+    if (expectedSecret && !candidates.some((value) => value === expectedSecret)) {
       throw new UnauthorizedException('Webhook não autorizado');
+    }
 
     if (!company) {
       this.logger.warn(
