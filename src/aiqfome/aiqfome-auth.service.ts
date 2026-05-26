@@ -54,12 +54,9 @@ export class AiqfomeAuthService {
 
     if (state) {
       const companyId = this.parseState(state);
-      const storeIdFromApi = hasStoreReadScope
-        ? await this.resolveAuthorizedStoreId(tokenData?.access_token)
-        : '';
-      await this.saveTokens(companyId, tokenData, storeIdFromApi);
-      this.logger.log(`[AiqfomeAuth] OAuth salvo via state companyId=${companyId} storeId=${storeIdFromApi || 'n/a'} status=connected`);
-      return { success: true, companyId, storeId: storeIdFromApi || null, mappedBy: 'state' };
+      await this.saveTokens(companyId, tokenData);
+      this.logger.log(`[AiqfomeAuth] OAuth salvo via state companyId=${companyId} status=connected`);
+      return { success: true, companyId, storeId: null, mappedBy: 'state' };
     }
 
     if (!hasStoreReadScope) {
@@ -71,9 +68,10 @@ export class AiqfomeAuthService {
 
     const storeIdFromApi = await this.resolveAuthorizedStoreId(tokenData?.access_token);
     if (!storeIdFromApi) {
+      this.logger.warn('[AiqfomeAuth] não foi possível identificar storeId automaticamente');
       return {
         success: false,
-        message: 'Não foi possível identificar a loja aiqfome autorizada. Verifique se o app possui o escopo aqf:store:read e tente reconectar.',
+        message: 'Autorização recebida, mas não foi possível identificar automaticamente a loja aiqfome autorizada. Acesse o Rappidex, abra Empresas Cadastradas e clique em Reconectar aiqfome na sua loja.',
       };
     }
 
@@ -181,6 +179,7 @@ export class AiqfomeAuthService {
       const storeId = await checkEndpoint(endpoint);
       if (storeId) return storeId;
     }
+    this.logger.warn('[AiqfomeAuth] não foi possível identificar storeId automaticamente');
     return '';
   }
 
