@@ -321,42 +321,12 @@ export class IfoodAdminController {
       throw new BadRequestException('ifoodMerchantId não configurado para esta loja.');
     }
 
-    const result = await this.ifoodImportService.importPendingOrdersForMerchant(
-      merchantId,
-      companyId,
-    );
+    await this.ifoodImportService.retryPendingImportsForCompany(companyId);
 
     return {
       companyId,
       merchantId,
-      ...result,
-      message: 'Sincronização iFood/backfill executada para esta loja',
+      message: 'Sincronização iFood iniciada para esta loja',
     };
-  }
-
-  @Post('import-pending/:shopkeeperId')
-  @UseGuards(JwtAuthGuard)
-  async importPendingByShopkeeper(
-    @Param('shopkeeperId') shopkeeperId: string,
-    @User() user: UserRequest,
-  ) {
-    if (!onlyForAdmin(user.type) && user.id !== shopkeeperId) {
-      throw new UnauthorizedException('Você não tem permissão para esse recurso.');
-    }
-    const company = await this.userRepository.findOneBy({ id: shopkeeperId });
-    if (!company) {
-      throw new BadRequestException('Empresa não encontrada.');
-    }
-    if (!company.useIfoodIntegration || !company.isActive) {
-      throw new BadRequestException('A integração iFood não está ativa para esta loja.');
-    }
-    const merchantId = String(company.ifoodMerchantId || '').trim();
-    if (!merchantId) {
-      throw new BadRequestException('ifoodMerchantId não configurado para esta loja.');
-    }
-    return this.ifoodImportService.importPendingOrdersForMerchant(
-      merchantId,
-      shopkeeperId,
-    );
   }
 }
