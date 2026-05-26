@@ -77,8 +77,8 @@ export class AiqfomeController {
       const pendingAuthorizationId = String((result as any)?.pendingAuthorizationId || '').trim();
       if (!mapped && pendingAuthorizationId) {
         const frontendUrl = this.getFrontendUrl();
-        const pendingUrl = `${frontendUrl}/clientes-ifood?aiqfomePending=${pendingAuthorizationId}`;
-        return res.status(200).send(`<html><body style="font-family:Arial,sans-serif;padding:24px;"><h3>Autorização aiqfome recebida. Para concluir a integração, acesse o Rappidex e vincule esta autorização à sua loja.</h3><p><a href="${pendingUrl}">Concluir no Rappidex</a></p></body></html>`);
+        const completeUrl = `${frontendUrl}/clientes-ifood?aiqfomePending=${pendingAuthorizationId}`;
+        return res.status(200).send(`<html><body style="font-family:Arial,sans-serif;padding:24px;"><h3>Autorização aiqfome recebida. Para concluir a integração, acesse o Rappidex e vincule esta autorização à sua loja.</h3><p><a href="${completeUrl}">Concluir no Rappidex</a></p></body></html>`);
       }
       const message = mapped
         ? 'Integração aiqfome concluída com sucesso. Pode fechar esta janela.'
