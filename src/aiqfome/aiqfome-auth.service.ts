@@ -30,6 +30,7 @@ export class AiqfomeAuthService {
     const configuredScope = String(this.configService.get<string>('AIQFOME_OAUTH_SCOPE') || '').trim();
     const scopeSet = new Set(configuredScope.split(/\s+/).filter(Boolean));
     scopeSet.add('aqf:order:read');
+    scopeSet.add('aqf:store:read');
 
     const params = new URLSearchParams({
       response_type: 'code',
@@ -39,7 +40,8 @@ export class AiqfomeAuthService {
       state: this.signState(companyId),
     });
 
-    return `https://id.magalu.com/oauth/authorize?${params.toString()}`;
+    const authorizeBaseUrl = String(this.configService.get<string>('AIQFOME_OAUTH_AUTHORIZE_URL') || 'https://id.magalu.com/login').trim().replace(/\/$/, '');
+    return `${authorizeBaseUrl}?${params.toString()}`;
   }
 
   async handleCallback(code?: string, state?: string) {
@@ -47,6 +49,13 @@ export class AiqfomeAuthService {
 
     const tokenData = await this.exchangeCodeForToken(code);
     const storeIdFromApi = await this.resolveAuthorizedStoreId(tokenData?.access_token);
+
+    if (!state && !storeIdFromApi) {
+      return {
+        success: false,
+        message: 'Não foi possível identificar a loja aiqfome autorizada. Verifique se o app possui o escopo aqf:store:read e tente reconectar.',
+      };
+    }
 
     if (state) {
       const companyId = this.parseState(state);
@@ -118,29 +127,45 @@ export class AiqfomeAuthService {
     const baseUrl = String(this.configService.get<string>('AIQFOME_API_BASE_URL') || 'https://plataforma.aiqfome.com').trim().replace(/\/$/, '');
     const headers = { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' };
     const extractStoreId = (payload: any) => {
-      const firstStore = Array.isArray(payload)
-        ? payload[0]
-        : Array.isArray(payload?.data)
-          ? payload.data[0]
-          : payload?.data || payload;
-      return String(firstStore?.id || firstStore?.storeId || firstStore?.store_id || '').trim();
+      const candidates = [
+        payload?.id,
+        payload?.storeId,
+        payload?.store_id,
+        payload?.data?.id,
+        payload?.data?.storeId,
+        payload?.data?.store_id,
+        payload?.data?.[0]?.id,
+        payload?.data?.[0]?.storeId,
+        payload?.data?.[0]?.store_id,
+        payload?.stores?.[0]?.id,
+        payload?.stores?.[0]?.storeId,
+        payload?.stores?.[0]?.store_id,
+        payload?.items?.[0]?.id,
+        payload?.items?.[0]?.storeId,
+        payload?.items?.[0]?.store_id,
+      ];
+      const found = candidates.find((value) => String(value || '').trim());
+      return String(found || '').trim();
     };
 
-    try {
-      const res = await axios.get(`${baseUrl}/api/v2/stores`, { headers });
-      const fromStores = extractStoreId(res.data);
-      if (fromStores) return fromStores;
-    } catch {
-      this.logger.warn('[AiqfomeAuth] não foi possível resolver storeId em /api/v2/stores');
-    }
+    const checkEndpoint = async (path: string) => {
+      try {
+        const res = await axios.get(`${baseUrl}${path}`, { headers });
+        const storeId = extractStoreId(res.data);
+        this.logger.log(`[AiqfomeAuth] resolve storeId endpoint=${path} status=${res.status} found=${Boolean(storeId)}${storeId ? ` storeId=${storeId}` : ''}`);
+        return storeId;
+      } catch (error: any) {
+        const status = error?.response?.status || 'n/a';
+        this.logger.warn(`[AiqfomeAuth] não foi possível resolver storeId endpoint=${path} status=${status}`);
+        return '';
+      }
+    };
 
-    try {
-      const res = await axios.get(`${baseUrl}/api/v2/store`, { headers });
-      return extractStoreId(res.data);
-    } catch {
-      this.logger.warn('[AiqfomeAuth] não foi possível resolver storeId em /api/v2/store');
-      return '';
-    }
+    const fromStores = await checkEndpoint('/api/v2/stores');
+    if (fromStores) return fromStores;
+
+    const fromStore = await checkEndpoint('/api/v2/store');
+    return fromStore || '';
   }
 
   private async handleCallbackWithoutState(tokenData: any, resolvedStoreId?: string) {
