@@ -61,10 +61,10 @@ export class IfoodReadinessService {
 
     const hasEligibleImportEvent = filteredEvents.some(
       (event) =>
-        ['CONFIRMED', 'ORDER_CONFIRMED', 'PREPARATION_STARTED', 'SEPARATION_STARTED', 'DSP', 'DISPATCHED'].includes(
+        ['CFM', 'CONFIRMED', 'PLC', 'PLACED', 'DSP', 'DISPATCHED', 'RTP', 'READY_TO_PICKUP'].includes(
           String(event?.code || '').toUpperCase(),
         ) ||
-        ['CONFIRMED', 'ORDER_CONFIRMED', 'PREPARATION_STARTED', 'SEPARATION_STARTED', 'DISPATCHED'].includes(
+        ['CFM', 'CONFIRMED', 'PLC', 'PLACED', 'DSP', 'DISPATCHED', 'RTP', 'READY_TO_PICKUP'].includes(
           String(event?.fullCode || '').toUpperCase(),
         ),
     );
@@ -102,7 +102,7 @@ export class IfoodReadinessService {
         : hasConcludedEvent
           ? 'Pedido não pode virar entrega no Rappidex porque já foi finalizado no iFood.'
           : !hasEligibleImportEvent
-            ? 'Pedido ainda não possui evento elegível para importação. Aguarde CONFIRMED/ORDER_CONFIRMED/PREPARATION_STARTED.'
+            ? 'Pedido ainda não possui evento elegível para importação. Aguarde CFM/CONFIRMED/PLC/PLACED/DSP/DISPATCHED/RTP/READY_TO_PICKUP.'
             : canCreateRappidexDelivery
               ? 'Pedido apto para virar entrega no Rappidex.'
               : 'Pedido não está apto para virar entrega no Rappidex.',

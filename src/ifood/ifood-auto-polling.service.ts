@@ -148,12 +148,8 @@ export class IfoodAutoPollingService
       this.logger.log(
         `Eventos pendentes de ACK neste ciclo: ${pendingAckEvents.length}`,
       );
-      const eligibleEvents = freshEvents.filter(
-        (event) =>
-          ['CONFIRMED','ORDER_CONFIRMED','PREPARATION_STARTED','SEPARATION_STARTED'].includes(String(event?.code||'').toUpperCase()) ||
-          ['CONFIRMED','ORDER_CONFIRMED','PREPARATION_STARTED','SEPARATION_STARTED'].includes(String(event?.fullCode||'').toUpperCase()) ||
-          event?.code === 'DSP' ||
-          event?.fullCode === 'DISPATCHED',
+      const eligibleEvents = freshEvents.filter((event) =>
+        this.isImportEligibleEvent(event),
       );
 
       if (polledAckTargets.length > 0) {
@@ -243,6 +239,7 @@ export class IfoodAutoPollingService
           await this.ifoodEventService.markAsProcessed(event, true);
         }
       }
+      await this.tryImportRecentEligibleOrders();
 
       const uniqueMerchants = Array.from(
         new Set(
@@ -262,6 +259,39 @@ export class IfoodAutoPollingService
         `Erro no polling automático do iFood: ${error?.message || error}`,
       );
     }
+  }
+
+  private isImportEligibleEvent(event: any): boolean {
+    const code = String(event?.code || '').toUpperCase().trim();
+    const fullCode = String(event?.fullCode || '').toUpperCase().trim();
+    return (
+      ['CFM', 'CONFIRMED', 'PLC', 'PLACED', 'DSP', 'DISPATCHED', 'RTP', 'READY_TO_PICKUP'].includes(code) ||
+      ['CFM', 'CONFIRMED', 'PLC', 'PLACED', 'DSP', 'DISPATCHED', 'RTP', 'READY_TO_PICKUP'].includes(fullCode)
+    );
+  }
+
+  private async tryImportRecentEligibleOrders() {
+    const recentEvents =
+      await this.ifoodEventService.findRecentEligibleImportEvents(100);
+
+    if (recentEvents.length === 0) {
+      return;
+    }
+
+    this.logger.log(
+      `iFood: tentando importar pedidos recentes aptos salvos localmente. eventos=${recentEvents.length}`,
+    );
+    await this.ifoodImportService.importFromEvents(
+      recentEvents.map((event) => ({
+        id: event.eventId,
+        orderId: event.orderId,
+        merchantId: event.merchantId,
+        code: event.code,
+        fullCode: event.fullCode,
+        salesChannel: event.salesChannel,
+        createdAt: event.createdAt,
+      })),
+    );
   }
 
   private resolvePollingIntervalMs() {
