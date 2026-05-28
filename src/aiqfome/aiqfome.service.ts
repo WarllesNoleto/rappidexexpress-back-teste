@@ -1,12 +1,13 @@
 import { BadRequestException, forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
-import { addSeconds } from 'date-fns';
+import { addMinutes, addSeconds } from 'date-fns';
 import { MongoRepository } from 'typeorm';
 import { v4 as uuid } from 'uuid';
 import {
   AiqfomeIntegrationEntity,
   AiqfomeOrderLinkEntity,
+  AiqfomePendingAuthorizationEntity,
   DeliveryEntity,
 } from '../database/entities';
 import { DeliveryResult } from '../delivery/dto';
@@ -24,6 +25,8 @@ export class AiqfomeService {
     private readonly repo: MongoRepository<AiqfomeIntegrationEntity>,
     @InjectRepository(DeliveryEntity)
     private readonly deliveries: MongoRepository<DeliveryEntity>,
+    @InjectRepository(AiqfomePendingAuthorizationEntity)
+    private readonly pendingAuthorizations: MongoRepository<AiqfomePendingAuthorizationEntity>,
     @Inject(forwardRef(() => DeliveryService))
     private readonly deliveryService: DeliveryService,
     private readonly linkService: AiqfomeOrderLinkService,
@@ -74,14 +77,28 @@ export class AiqfomeService {
     return integration;
   }
 
-  generateConnectUrl(shopkeeperId: string, storeId?: string) {
+  async generateConnectUrl(shopkeeperId: string, storeId?: string) {
     const authorizeUrl = this.requireEnv('AIQFOME_AUTHORIZE_URL');
     const clientId = this.requireEnv('AIQFOME_CLIENT_ID');
     const redirectUri = this.requireEnv('AIQFOME_REDIRECT_URI');
     const scopes = this.requireEnv('AIQFOME_SCOPES');
+    const nonce = uuid();
+    const createdAt = new Date();
+    const expiresAt = addMinutes(createdAt, 15);
+
+    await this.pendingAuthorizations.save({
+      id: uuid(),
+      shopkeeperId,
+      storeId: storeId || '',
+      nonce,
+      used: false,
+      createdAt,
+      expiresAt,
+    });
+    this.logger.log('[Aiqfome] autorização pendente criada');
 
     const state = Buffer.from(
-      JSON.stringify({ shopkeeperId, storeId: storeId || '', nonce: uuid() }),
+      JSON.stringify({ shopkeeperId, storeId: storeId || '', nonce }),
     ).toString('base64url');
 
     const params = new URLSearchParams();
@@ -98,21 +115,86 @@ export class AiqfomeService {
     return { url, state };
   }
 
-  async handleOAuthCallback(code: string, state: string) {
-    this.logger.log('[Aiqfome] callback recebido');
-    if (!code || !state) throw new BadRequestException('code/state obrigatórios');
-    let decoded: any;
-    try {
-      decoded = JSON.parse(Buffer.from(state, 'base64url').toString('utf8'));
-    } catch {
-      throw new BadRequestException('State inválido na conexão aiqfome.');
+  private async findValidPendingAuthorizationByNonce(nonce?: string) {
+    if (!nonce) return null;
+
+    const pendingAuthorization = await this.pendingAuthorizations.findOneBy({ nonce });
+    const now = new Date();
+
+    if (
+      pendingAuthorization &&
+      !pendingAuthorization.used &&
+      new Date(pendingAuthorization.expiresAt).getTime() > now.getTime()
+    ) {
+      return pendingAuthorization;
     }
 
-    if (!decoded?.shopkeeperId) {
+    return null;
+  }
+
+  private async findLatestValidPendingAuthorization() {
+    const pendingAuthorizations = await this.pendingAuthorizations.find({
+      where: {
+        used: false,
+        expiresAt: { $gt: new Date() },
+      } as any,
+      order: { createdAt: 'DESC' },
+      take: 1,
+    });
+
+    return Array.isArray(pendingAuthorizations) && pendingAuthorizations.length
+      ? pendingAuthorizations[0]
+      : null;
+  }
+
+  private async markPendingAuthorizationAsUsed(pendingAuthorization?: AiqfomePendingAuthorizationEntity | null) {
+    if (!pendingAuthorization) return;
+
+    pendingAuthorization.used = true;
+    await this.pendingAuthorizations.save(pendingAuthorization);
+    this.logger.log('[Aiqfome] autorização pendente marcada como usada');
+  }
+
+  async handleOAuthCallback(code: string, state?: string) {
+    this.logger.log('[Aiqfome] callback recebido');
+    if (!code) throw new BadRequestException('code obrigatório');
+
+    let decoded: any = null;
+    let pendingAuthorization: AiqfomePendingAuthorizationEntity | null = null;
+    let shopkeeperId = '';
+    let storeId = '';
+
+    if (state) {
+      try {
+        decoded = JSON.parse(Buffer.from(state, 'base64url').toString('utf8'));
+      } catch {
+        throw new BadRequestException('State inválido na conexão aiqfome.');
+      }
+
+      pendingAuthorization = await this.findValidPendingAuthorizationByNonce(decoded?.nonce);
+      shopkeeperId = String(pendingAuthorization?.shopkeeperId || decoded?.shopkeeperId || '').trim();
+      storeId = String(pendingAuthorization?.storeId ?? decoded?.storeId ?? '').trim();
+    } else {
+      pendingAuthorization = await this.findLatestValidPendingAuthorization();
+
+      if (!pendingAuthorization) {
+        this.logger.warn('[Aiqfome] nenhuma autorização pendente encontrada para callback sem state');
+        throw new BadRequestException(
+          'State ausente e nenhuma autorização aiqfome pendente foi encontrada. Clique novamente em Conectar aiqfome pelo Rappidex.',
+        );
+      }
+
+      this.logger.log('[Aiqfome] callback recebido sem state, usando autorização pendente mais recente');
+      shopkeeperId = String(pendingAuthorization.shopkeeperId || '').trim();
+      storeId = String(pendingAuthorization.storeId || '').trim();
+    }
+
+    if (!shopkeeperId) {
       throw new BadRequestException('shopkeeperId ausente no state da conexão aiqfome.');
     }
 
-    const integration = await this.exchangeCodeForToken(code, decoded.shopkeeperId, decoded.storeId);
+    const integration = await this.exchangeCodeForToken(code, shopkeeperId, storeId);
+    await this.markPendingAuthorizationAsUsed(pendingAuthorization);
 
     return {
       success: true,
