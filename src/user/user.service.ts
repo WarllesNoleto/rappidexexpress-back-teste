@@ -83,8 +83,13 @@ export class UserService {
       ? (data.ifoodMerchantId?.trim() ?? ifoodMerchants[0]?.merchantId ?? '')
       : '';
     const useAiqfomeIntegration = Boolean(data.useAiqfomeIntegration);
-    const aiqfomeStores = useAiqfomeIntegration ? this.normalizeAiqfomeStores(data.aiqfomeStores) : [];
-    const aiqfomeStoreId = useAiqfomeIntegration ? String(data.aiqfomeStoreId || aiqfomeStores.find((s) => s.enabled)?.storeId || '').trim() : '';
+    const initialAiqfomeStores = this.normalizeAiqfomeStores(data.aiqfomeStores);
+    const aiqfomeStoreId = useAiqfomeIntegration
+      ? String(data.aiqfomeStoreId || initialAiqfomeStores.find((s) => s.enabled)?.storeId || '').trim()
+      : '';
+    const aiqfomeStores = useAiqfomeIntegration
+      ? this.buildSingleAiqfomeStore(aiqfomeStoreId, data.name, initialAiqfomeStores)
+      : [];
 
     try {
       const newUser = await this.userRepository.save({
@@ -231,12 +236,15 @@ export class UserService {
         data.ifoodMerchants ?? userToUpdate.ifoodMerchants,
       );
       const useAiqfomeIntegration = data.useAiqfomeIntegration ?? userToUpdate.useAiqfomeIntegration ?? false;
-      const aiqfomeStores = useAiqfomeIntegration
-        ? this.normalizeAiqfomeStores(data.aiqfomeStores ?? userToUpdate.aiqfomeStores)
-        : [];
+      const initialAiqfomeStores = this.normalizeAiqfomeStores(
+        data.aiqfomeStores ?? userToUpdate.aiqfomeStores,
+      );
       const aiqfomeStoreId = useAiqfomeIntegration
-        ? String(data.aiqfomeStoreId ?? userToUpdate.aiqfomeStoreId ?? aiqfomeStores.find((s) => s.enabled)?.storeId ?? '').trim()
+        ? String(data.aiqfomeStoreId ?? userToUpdate.aiqfomeStoreId ?? initialAiqfomeStores.find((s) => s.enabled)?.storeId ?? '').trim()
         : '';
+      const aiqfomeStores = useAiqfomeIntegration
+        ? this.buildSingleAiqfomeStore(aiqfomeStoreId, userToUpdate.name, initialAiqfomeStores)
+        : [];
 
       const changedUser = await this.userRepository.save({
         ...userToUpdate,
@@ -356,6 +364,29 @@ export class UserService {
         pickupAddress: String(store?.pickupAddress || '').trim() || undefined,
       }))
       .filter((store) => store.storeId);
+  }
+
+  private buildSingleAiqfomeStore(
+    storeId: string,
+    userName?: string,
+    existingStores: Array<any> = [],
+  ): Array<any> {
+    const normalizedStoreId = String(storeId || '').trim();
+    if (!normalizedStoreId) {
+      return [];
+    }
+
+    const existingStore = existingStores.find(
+      (store) => String(store?.storeId || '').trim() === normalizedStoreId,
+    );
+
+    return [
+      {
+        storeId: normalizedStoreId,
+        name: String(userName || existingStore?.name || 'Loja aiqfome').trim(),
+        enabled: true,
+      },
+    ];
   }
 
   private getActiveMerchantIds(company: UserEntity): string[] {
