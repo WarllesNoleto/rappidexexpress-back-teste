@@ -95,7 +95,15 @@ export class AiqfomeService {
     this.logger.log('[Aiqfome] callback recebido');
     if (!code || !state) throw new BadRequestException('code/state obrigatórios');
     const decoded = JSON.parse(Buffer.from(state, 'base64url').toString('utf8'));
-    return this.exchangeCodeForToken(code, decoded.shopkeeperId, decoded.storeId);
+    const integration = await this.exchangeCodeForToken(code, decoded.shopkeeperId, decoded.storeId);
+
+    return {
+      success: true,
+      message: 'Integração aiqfome conectada com sucesso.',
+      shopkeeperId: integration.shopkeeperId,
+      aiqfomeStoreId: integration.aiqfomeStoreId,
+      storeName: integration.storeName,
+    };
   }
 
   async exchangeCodeForToken(code: string, shopkeeperId: string, storeId?: string) {
@@ -122,19 +130,22 @@ export class AiqfomeService {
       ? storesResp.data[0]
       : storesResp.data?.data?.[0];
     const finalStoreId = String(storeId || firstStore?.id || '');
-    const entity = await this.repo.save({
-      id: uuid(),
+    const existingIntegration = await this.repo.findOneBy({
       shopkeeperId,
       aiqfomeStoreId: finalStoreId,
-      storeName: String(firstStore?.name || finalStoreId || 'aiqfome'),
+    } as any);
+    const entity = await this.repo.save({
+      ...(existingIntegration || { id: uuid(), createdAt: new Date() }),
+      shopkeeperId,
+      aiqfomeStoreId: finalStoreId,
+      storeName: String(firstStore?.name || existingIntegration?.storeName || finalStoreId || 'aiqfome'),
       accessToken,
-      refreshToken: String(tokenData.refresh_token || ''),
+      refreshToken: String(tokenData.refresh_token || existingIntegration?.refreshToken || ''),
       tokenExpiresAt: addSeconds(new Date(), Number(tokenData.expires_in || 3600)),
       scopes: Array.isArray(tokenData.scope)
         ? tokenData.scope
         : String(tokenData.scope || '').split(' ').filter(Boolean),
       active: true,
-      createdAt: new Date(),
       updatedAt: new Date(),
     });
     this.logger.log('[Aiqfome] token trocado e salvo');
@@ -415,8 +426,8 @@ export class AiqfomeService {
   private async markOrderAsRead(integration: AiqfomeIntegrationEntity, orderId: string) {
     const validIntegration = await this.ensureValidToken(integration);
     await axios.post(
-      this.buildAiqfomeUrl(`/orders/${orderId}/mark-as-read`),
-      {},
+      this.buildAiqfomeUrl('/orders/mark-as-read'),
+      { order_id: orderId },
       { headers: { Authorization: `Bearer ${validIntegration.accessToken}` } },
     );
     this.logger.log('[Aiqfome] mark-as-read enviado');
@@ -554,11 +565,7 @@ export class AiqfomeService {
       { status: StatusDelivery.ARRIVED_AT_STORE, endpointPath: 'arrived-at-merchant', flagName: 'arrivedAtMerchantSynced' },
       { status: StatusDelivery.COLLECTED, endpointPath: 'delivery-ongoing', flagName: 'deliveryOngoingSynced' },
       { status: StatusDelivery.ARRIVED_AT_DESTINATION, endpointPath: 'arrived-at-customer', flagName: 'arrivedAtCustomerSynced' },
-      {
-        status: StatusDelivery.FINISHED,
-        endpointPath: String(process.env.AIQFOME_DELIVERED_ENDPOINT_PATH || 'mark-as-delivered').replace(/^\/+/, ''),
-        flagName: 'deliveredSynced',
-      },
+      { status: StatusDelivery.FINISHED, endpointPath: 'order-delivered', flagName: 'deliveredSynced' },
     ];
 
     const targetIndex = steps.findIndex((step) => step.status === nextStatus);
@@ -572,7 +579,7 @@ export class AiqfomeService {
         const updated = await this.postLogisticStatus(
           integration,
           currentLink,
-          `/orders/${currentLink.aiqfomeOrderId}/${step.endpointPath}`,
+          `/logistic/${currentLink.aiqfomeOrderId}/${step.endpointPath}`,
           step.flagName,
         );
         currentLink = updated || ({ ...currentLink, [step.flagName]: true } as AiqfomeOrderLinkEntity);

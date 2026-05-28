@@ -1,31 +1,83 @@
-import { Body, Controller, Get, Headers, HttpCode, Param, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpCode,
+  Param,
+  Post,
+  Query,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
+import { JwtAuthGuard } from '../authenticator/guards/jwt-auth.guard';
+import { User } from '../shared/decorators';
+import { UserRequest } from '../shared/interfaces';
+import { onlyForAdmin } from '../shared/utils/permissions.function';
 import { AiqfomeService } from './aiqfome.service';
 
 @Controller('aiqfome')
 export class AiqfomeController {
   constructor(private readonly aiqfomeService: AiqfomeService) {}
 
+  private ensureSensitiveRouteAccess(user: UserRequest) {
+    if (process.env.AIQFOME_DEBUG_ROUTES_ENABLED === 'true') {
+      return;
+    }
+
+    if (!onlyForAdmin(user?.type)) {
+      throw new UnauthorizedException('Você não tem permissão para esse recurso.');
+    }
+  }
+
   @Get('connect-url')
-  getConnectUrl(@Query('shopkeeperId') shopkeeperId: string, @Query('storeId') storeId?: string) { return this.aiqfomeService.generateConnectUrl(shopkeeperId, storeId); }
+  @UseGuards(JwtAuthGuard)
+  getConnectUrl(
+    @User() user: UserRequest,
+    @Query('shopkeeperId') shopkeeperId: string,
+    @Query('storeId') storeId?: string,
+  ) {
+    this.ensureSensitiveRouteAccess(user);
+    return this.aiqfomeService.generateConnectUrl(shopkeeperId, storeId);
+  }
 
   @Get('integrations')
-  list(@Query('shopkeeperId') shopkeeperId: string) { return this.aiqfomeService.listStores(shopkeeperId); }
+  @UseGuards(JwtAuthGuard)
+  list(@User() user: UserRequest, @Query('shopkeeperId') shopkeeperId: string) {
+    this.ensureSensitiveRouteAccess(user);
+    return this.aiqfomeService.listStores(shopkeeperId);
+  }
 
   @Get('callback')
   callback(@Query('code') code: string, @Query('state') state: string) { return this.aiqfomeService.handleOAuthCallback(code, state); }
 
-
   @Post('import-order')
-  importOrder(@Body() body: any) { return this.aiqfomeService.importOrder(body.integrationId, body.orderId, body.storeId); }
+  @UseGuards(JwtAuthGuard)
+  importOrder(@User() user: UserRequest, @Body() body: any) {
+    this.ensureSensitiveRouteAccess(user);
+    return this.aiqfomeService.importOrder(body.integrationId, body.orderId, body.storeId);
+  }
 
   @Post('sync-status')
-  syncStatus(@Body() body: any) { return this.aiqfomeService.syncStatus(body.deliveryId); }
+  @UseGuards(JwtAuthGuard)
+  syncStatus(@User() user: UserRequest, @Body() body: any) {
+    this.ensureSensitiveRouteAccess(user);
+    return this.aiqfomeService.syncStatus(body.deliveryId);
+  }
 
   @Post('register-webhook/:integrationId')
-  registerWebhook(@Param('integrationId') integrationId: string) { return this.aiqfomeService.registerWebhookById(integrationId); }
+  @UseGuards(JwtAuthGuard)
+  registerWebhook(@User() user: UserRequest, @Param('integrationId') integrationId: string) {
+    this.ensureSensitiveRouteAccess(user);
+    return this.aiqfomeService.registerWebhookById(integrationId);
+  }
 
   @Get('health')
-  health() { return { ok: true, at: new Date().toISOString() }; }
+  @UseGuards(JwtAuthGuard)
+  health(@User() user: UserRequest) {
+    this.ensureSensitiveRouteAccess(user);
+    return { ok: true, at: new Date().toISOString() };
+  }
 
   @Post('webhook')
   @HttpCode(200)
