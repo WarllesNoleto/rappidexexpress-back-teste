@@ -50,7 +50,7 @@ export class AiqfomeController {
     return this.aiqfomeService.listStores(shopkeeperId);
   }
 
-  @Get('callback')
+  @Get(['callback', 'oauth/callback'])
   async callback(
     @Query('code') code: string,
     @Query('state') state: string,
