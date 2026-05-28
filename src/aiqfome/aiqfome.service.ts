@@ -9,7 +9,9 @@ import {
   AiqfomeOrderLinkEntity,
   DeliveryEntity,
 } from '../database/entities';
+import { DeliveryResult } from '../delivery/dto';
 import { DeliveryService } from '../delivery/delivery.service';
+import { OrdersGateway } from '../gateway/orders.gateway';
 import { PaymentType, StatusDelivery } from '../shared/constants/enums.constants';
 import { AiqfomeOrderLinkService } from './aiqfome-order-link.service';
 
@@ -25,6 +27,7 @@ export class AiqfomeService {
     @Inject(forwardRef(() => DeliveryService))
     private readonly deliveryService: DeliveryService,
     private readonly linkService: AiqfomeOrderLinkService,
+    private readonly ordersGateway: OrdersGateway,
   ) {}
 
   private requireEnv(name: string) {
@@ -94,7 +97,17 @@ export class AiqfomeService {
   async handleOAuthCallback(code: string, state: string) {
     this.logger.log('[Aiqfome] callback recebido');
     if (!code || !state) throw new BadRequestException('code/state obrigatórios');
-    const decoded = JSON.parse(Buffer.from(state, 'base64url').toString('utf8'));
+    let decoded: any;
+    try {
+      decoded = JSON.parse(Buffer.from(state, 'base64url').toString('utf8'));
+    } catch {
+      throw new BadRequestException('State inválido na conexão aiqfome.');
+    }
+
+    if (!decoded?.shopkeeperId) {
+      throw new BadRequestException('shopkeeperId ausente no state da conexão aiqfome.');
+    }
+
     const integration = await this.exchangeCodeForToken(code, decoded.shopkeeperId, decoded.storeId);
 
     return {
@@ -126,10 +139,33 @@ export class AiqfomeService {
       })
       .catch(() => ({ data: [] }));
     this.logger.log('[Aiqfome] lojas autorizadas consultadas');
-    const firstStore = Array.isArray(storesResp.data)
-      ? storesResp.data[0]
-      : storesResp.data?.data?.[0];
-    const finalStoreId = String(storeId || firstStore?.id || '');
+    const stores = Array.isArray(storesResp.data)
+      ? storesResp.data
+      : Array.isArray(storesResp.data?.data)
+        ? storesResp.data.data
+        : [];
+
+    if (!stores.length) {
+      throw new BadRequestException('Nenhuma loja aiqfome autorizada foi encontrada para este token.');
+    }
+
+    const selectedStore = storeId
+      ? stores.find((store) =>
+          String(store?.id || store?.store_id || store?.storeId || '') === String(storeId)
+        )
+      : stores[0];
+
+    if (!selectedStore) {
+      throw new BadRequestException('O Store ID informado não pertence às lojas autorizadas no aiqfome. Confira o código da loja e conecte novamente.');
+    }
+
+    const finalStoreId = String(selectedStore?.id || selectedStore?.store_id || selectedStore?.storeId || '').trim();
+
+    if (!finalStoreId) {
+      throw new BadRequestException('Não foi possível identificar o Store ID autorizado do aiqfome.');
+    }
+
+    const finalStoreName = String(selectedStore?.name || selectedStore?.store_name || selectedStore?.title || finalStoreId);
     const existingIntegration = await this.repo.findOneBy({
       shopkeeperId,
       aiqfomeStoreId: finalStoreId,
@@ -138,7 +174,7 @@ export class AiqfomeService {
       ...(existingIntegration || { id: uuid(), createdAt: new Date() }),
       shopkeeperId,
       aiqfomeStoreId: finalStoreId,
-      storeName: String(firstStore?.name || existingIntegration?.storeName || finalStoreId || 'aiqfome'),
+      storeName: finalStoreName,
       accessToken,
       refreshToken: String(tokenData.refresh_token || existingIntegration?.refreshToken || ''),
       tokenExpiresAt: addSeconds(new Date(), Number(tokenData.expires_in || 3600)),
@@ -176,8 +212,27 @@ export class AiqfomeService {
     return this.repo.save(integration);
   }
 
-  listStores(shopkeeperId: string) {
-    return this.repo.find({ where: { shopkeeperId, active: true } as any });
+  async listStores(shopkeeperId: string) {
+    if (!shopkeeperId) {
+      return [];
+    }
+
+    const integrations = await this.repo.find({
+      where: { shopkeeperId, active: true } as any,
+    });
+
+    return integrations.map((integration) => ({
+      id: integration.id,
+      shopkeeperId: integration.shopkeeperId,
+      aiqfomeStoreId: integration.aiqfomeStoreId,
+      storeName: integration.storeName,
+      active: integration.active,
+      tokenExpiresAt: integration.tokenExpiresAt,
+      connected: Boolean(integration.accessToken && integration.refreshToken),
+      status: integration.tokenExpiresAt && new Date(integration.tokenExpiresAt).getTime() > Date.now()
+        ? 'Conectado'
+        : 'Token expirado',
+    }));
   }
 
   async registerWebhookById(integrationId: string) {
@@ -191,7 +246,7 @@ export class AiqfomeService {
     const webhookSecret = this.requireEnv('AIQFOME_WEBHOOK_SECRET');
     const backendPublicUrl = this.requireEnv('BACKEND_PUBLIC_URL').replace(/\/+$/, '');
 
-    return axios.post(
+    const response = await axios.post(
       this.buildAiqfomeUrl(`/store/${validIntegration.aiqfomeStoreId}/webhooks`),
       {
         url: `${backendPublicUrl}/api/aiqfome/webhook`,
@@ -200,6 +255,12 @@ export class AiqfomeService {
       },
       { headers: { Authorization: `Bearer ${validIntegration.accessToken}` } },
     );
+
+    return {
+      success: true,
+      status: response.status,
+      message: 'Webhook aiqfome registrado com sucesso.',
+    };
   }
 
   async handleWebhook(headers: Record<string, string>, payload: any) {
@@ -278,6 +339,13 @@ export class AiqfomeService {
             },
           } as any,
         );
+        const updatedDelivery = await this.deliveries.findOneBy({ id: link.deliveryId } as any);
+        if (updatedDelivery) {
+          this.ordersGateway.emitDeliveryUpdated(
+            DeliveryResult.fromEntity(updatedDelivery),
+            updatedDelivery.establishment?.cityId,
+          );
+        }
         this.logger.warn(`[Aiqfome] entrega cancelada/desativada por webhook. deliveryId=${link.deliveryId}`);
         return;
       }
@@ -370,6 +438,11 @@ export class AiqfomeService {
     if (!integration) {
       this.logger.warn('[Aiqfome] importação ignorada: integração não encontrada');
       return { success: false, message: 'Integração aiqfome não encontrada.' };
+    }
+
+    if (!integration.active || !integration.aiqfomeStoreId || !integration.shopkeeperId) {
+      this.logger.warn('[Aiqfome] integração inválida para importação');
+      return { success: false, message: 'Integração aiqfome inválida para importação.' };
     }
 
     const duplicate = await this.linkService.findByAiqfomeOrderId(
