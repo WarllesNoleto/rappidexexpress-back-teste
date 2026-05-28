@@ -206,17 +206,35 @@ export class AiqfomeService {
   }
 
   async exchangeCodeForToken(code: string, shopkeeperId: string, storeId?: string) {
-    const tokenResp = await axios.post(
-      this.requireEnv('AIQFOME_AUTH_TOKEN_URL'),
-      new URLSearchParams({
-        grant_type: 'authorization_code',
-        code,
-        client_id: this.requireEnv('AIQFOME_CLIENT_ID'),
-        client_secret: this.requireEnv('AIQFOME_CLIENT_SECRET'),
-        redirect_uri: this.requireEnv('AIQFOME_REDIRECT_URI'),
-      }),
-      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
-    );
+    const redirectUri = this.requireEnv('AIQFOME_REDIRECT_URI');
+    const payload = {
+      client_id: this.requireEnv('AIQFOME_CLIENT_ID'),
+      client_secret: this.requireEnv('AIQFOME_CLIENT_SECRET'),
+      redirect_uri: redirectUri,
+      code,
+      grant_type: 'authorization_code',
+    };
+    let tokenResp;
+
+    try {
+      tokenResp = await axios.post(
+        this.requireEnv('AIQFOME_AUTH_TOKEN_URL'),
+        payload,
+        { headers: { 'Content-Type': 'application/json' } },
+      );
+    } catch (error) {
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      const body = axios.isAxiosError(error) ? this.summarizeErrorBody(error.response?.data) : '';
+
+      this.logger.error(
+        `[Aiqfome] erro ao trocar code por token. status=${status ?? 'indisponível'} body=${body || 'sem body'} redirectUri=${redirectUri}`,
+      );
+
+      throw new BadRequestException(
+        'Não foi possível trocar o code por token no aiqfome. Verifique as credenciais OAuth e o redirect_uri.',
+      );
+    }
+
     const tokenData = tokenResp.data || {};
     const accessToken = String(tokenData.access_token || '');
     let storesResp;
