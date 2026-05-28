@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -47,7 +48,26 @@ export class AiqfomeController {
   ) {
     this.logDiagnostic('connect-url chamado');
     this.ensureSensitiveRouteAccess(user);
-    return this.aiqfomeService.generateConnectUrl(shopkeeperId, storeId);
+
+    const normalizedShopkeeperId = String(shopkeeperId || '').trim();
+    const normalizedStoreId = String(storeId || '').trim();
+
+    if (!normalizedShopkeeperId) {
+      throw new BadRequestException(
+        'shopkeeperId obrigatório para iniciar conexão aiqfome.',
+      );
+    }
+
+    if (!normalizedStoreId) {
+      throw new BadRequestException(
+        'storeId obrigatório para iniciar conexão aiqfome.',
+      );
+    }
+
+    return this.aiqfomeService.generateConnectUrl(
+      normalizedShopkeeperId,
+      normalizedStoreId,
+    );
   }
 
   @Get('integrations')
