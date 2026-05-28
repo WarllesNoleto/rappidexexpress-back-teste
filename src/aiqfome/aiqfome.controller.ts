@@ -60,7 +60,7 @@ export class AiqfomeController {
     const frontendPublicUrl = String(process.env.FRONTEND_PUBLIC_URL || '').trim().replace(/\/+$/, '');
 
     if (frontendPublicUrl) {
-      response.redirect(`${frontendPublicUrl}/empresas-cadastradas?aiqfome=connected`);
+      response.redirect(`${frontendPublicUrl}/clientes-ifood?aiqfome=connected`);
       return;
     }
 
