@@ -14,8 +14,6 @@ export class AiqfomeController {
   @Get('callback')
   callback(@Query('code') code: string, @Query('state') state: string) { return this.aiqfomeService.handleOAuthCallback(code, state); }
 
-  @Post('company/:companyId/save-config')
-  saveConfig(@Param('companyId') companyId: string, @Body() body: any) { return this.aiqfomeService.saveCompanyConfig(companyId, body); }
 
   @Post('import-order')
   importOrder(@Body() body: any) { return this.aiqfomeService.importOrder(body.integrationId, body.orderId, body.storeId); }
@@ -31,5 +29,5 @@ export class AiqfomeController {
 
   @Post('webhook')
   @HttpCode(200)
-  webhook(@Headers() headers: Record<string, string>, @Body() payload: any) { void this.aiqfomeService.handleWebhook(headers, payload); return { success: true }; }
+  webhook(@Headers() headers: Record<string, string>, @Body() payload: any) { this.aiqfomeService.handleWebhook(headers, payload).catch((error) => { console.error('[Aiqfome] erro assíncrono no webhook', error?.message || error); }); return { success: true }; }
 }

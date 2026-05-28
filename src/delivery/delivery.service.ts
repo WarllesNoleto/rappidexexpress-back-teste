@@ -31,6 +31,7 @@ import { IfoodCreditsService } from '../ifood/ifood-credits.service';
 import { IfoodEventService } from '../ifood/ifood-event.service';
 import { sendNotificationsFor } from 'src/shared/utils/notification.functions';
 import { OrdersGateway } from '../gateway/orders.gateway';
+import { AiqfomeService } from '../aiqfome/aiqfome.service';
 
 @Injectable()
 export class DeliveryService implements OnModuleInit {
@@ -53,6 +54,8 @@ export class DeliveryService implements OnModuleInit {
     private readonly ifoodCreditsService: IfoodCreditsService,
     @Inject(forwardRef(() => IfoodEventService))
     private readonly ifoodEventService: IfoodEventService,
+    @Inject(forwardRef(() => AiqfomeService))
+    private readonly aiqfomeService: AiqfomeService,
   ) {}
 
   private async syncIfoodOnCourseIfNeeded(
@@ -504,6 +507,20 @@ export class DeliveryService implements OnModuleInit {
     });
   }
 
+
+  private syncAiqfomeInBackground(
+    previousDelivery: DeliveryEntity,
+    nextDelivery: DeliveryEntity,
+  ) {
+    void this.aiqfomeService
+      .syncStatusFromDelivery(previousDelivery, nextDelivery)
+      .catch((error: any) => {
+        this.logger.warn(
+          `Falha assíncrona ao sincronizar delivery ${previousDelivery.id} com aiqfome. ${error?.message || error}`,
+        );
+      });
+  }
+
   private async refundCreditForCanceledDelivery(
     delivery: DeliveryEntity,
     reason: string,
@@ -944,6 +961,7 @@ export class DeliveryService implements OnModuleInit {
       }
 
       await this.saveIfoodSyncFlags(deliveryUpdated.id, ifoodSyncFlags);
+      this.syncAiqfomeInBackground(deliveryFinded, deliveryUpdated);
       deliveryUpdated = {
         ...deliveryUpdated,
         ...ifoodSyncFlags,
@@ -1001,6 +1019,8 @@ export class DeliveryService implements OnModuleInit {
           deliveryData,
         );
       }
+
+      this.syncAiqfomeInBackground(deliveryFinded, deliveryUpdated);
     }
 
     this.ordersGateway.emitDeliveryUpdated(
@@ -1617,6 +1637,10 @@ export class DeliveryService implements OnModuleInit {
       }
     }
 
+    if (delivery.status !== updated.status) {
+      this.syncAiqfomeInBackground(delivery, updated);
+    }
+
     this.ordersGateway.emitDeliveryUpdated(
       DeliveryResult.fromEntity(updated),
       updated.establishment?.cityId,
@@ -1648,6 +1672,8 @@ export class DeliveryService implements OnModuleInit {
         updatedAt: addHours(new Date(), -3),
       }),
     );
+
+    this.syncAiqfomeInBackground(delivery, updated);
 
     this.ordersGateway.emitDeliveryUpdated(
       DeliveryResult.fromEntity(updated),

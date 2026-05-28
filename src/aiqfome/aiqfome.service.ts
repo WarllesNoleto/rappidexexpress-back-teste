@@ -1,10 +1,14 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
 import { addSeconds } from 'date-fns';
 import { MongoRepository } from 'typeorm';
 import { v4 as uuid } from 'uuid';
-import { AiqfomeIntegrationEntity, AiqfomeOrderLinkEntity, DeliveryEntity, UserEntity } from '../database/entities';
+import {
+  AiqfomeIntegrationEntity,
+  AiqfomeOrderLinkEntity,
+  DeliveryEntity,
+} from '../database/entities';
 import { DeliveryService } from '../delivery/delivery.service';
 import { PaymentType, StatusDelivery } from '../shared/constants/enums.constants';
 import { AiqfomeOrderLinkService } from './aiqfome-order-link.service';
@@ -12,71 +16,590 @@ import { AiqfomeOrderLinkService } from './aiqfome-order-link.service';
 @Injectable()
 export class AiqfomeService {
   private readonly logger = new Logger(AiqfomeService.name);
+
   constructor(
-    @InjectRepository(AiqfomeIntegrationEntity) private readonly repo: MongoRepository<AiqfomeIntegrationEntity>,
-    @InjectRepository(UserEntity) private readonly users: MongoRepository<UserEntity>,
-    @InjectRepository(DeliveryEntity) private readonly deliveries: MongoRepository<DeliveryEntity>,
-    @InjectRepository(AiqfomeOrderLinkEntity) private readonly aiqLinks: MongoRepository<AiqfomeOrderLinkEntity>,
+    @InjectRepository(AiqfomeIntegrationEntity)
+    private readonly repo: MongoRepository<AiqfomeIntegrationEntity>,
+    @InjectRepository(DeliveryEntity)
+    private readonly deliveries: MongoRepository<DeliveryEntity>,
+    @Inject(forwardRef(() => DeliveryService))
     private readonly deliveryService: DeliveryService,
     private readonly linkService: AiqfomeOrderLinkService,
   ) {}
 
+  private requireEnv(name: string) {
+    const value = String(process.env[name] || '').trim();
+
+    if (!value) {
+      throw new BadRequestException(`Variável de ambiente ${name} obrigatória para integração aiqfome.`);
+    }
+
+    return value;
+  }
+
+  /**
+   * AIQFOME_API_BASE_URL deve apontar para a base já versionada da API aiqfome.
+   * Exemplo: https://BASE_OFICIAL_DA_API_AIQFOME/api/v2 (ou a base V2 oficial equivalente).
+   */
+  private buildAiqfomeUrl(path: string) {
+    const base = this.requireEnv('AIQFOME_API_BASE_URL').replace(/\/+$/, '');
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    return `${base}${normalizedPath}`;
+  }
+
+  private summarizeErrorBody(data: any) {
+    if (!data) return '';
+    const raw = typeof data === 'string' ? data : JSON.stringify(data);
+    return raw.replace(/access_token"?\s*:\s*"[^"]+"/gi, 'access_token":"[redacted]"').slice(0, 600);
+  }
+
+  private async ensureValidToken(integration: AiqfomeIntegrationEntity) {
+    const expiresAt = integration.tokenExpiresAt
+      ? new Date(integration.tokenExpiresAt).getTime()
+      : 0;
+    const now = Date.now();
+    const fiveMinutes = 5 * 60 * 1000;
+
+    if (!expiresAt || expiresAt - now <= fiveMinutes) {
+      return this.refreshToken(integration.id);
+    }
+
+    return integration;
+  }
+
   generateConnectUrl(shopkeeperId: string, storeId?: string) {
-    const state = Buffer.from(JSON.stringify({ shopkeeperId, storeId: storeId || '', nonce: uuid() })).toString('base64url');
-    const url = `${process.env.AIQFOME_AUTHORIZE_URL}?client_id=${encodeURIComponent(process.env.AIQFOME_CLIENT_ID || '')}&redirect_uri=${encodeURIComponent(process.env.AIQFOME_REDIRECT_URI || '')}&response_type=code&scope=orders webhook logistic&state=${state}`;
+    const authorizeUrl = this.requireEnv('AIQFOME_AUTHORIZE_URL');
+    const clientId = this.requireEnv('AIQFOME_CLIENT_ID');
+    const redirectUri = this.requireEnv('AIQFOME_REDIRECT_URI');
+    const scopes = this.requireEnv('AIQFOME_SCOPES');
+
+    const state = Buffer.from(
+      JSON.stringify({ shopkeeperId, storeId: storeId || '', nonce: uuid() }),
+    ).toString('base64url');
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: scopes,
+      state,
+    });
+    const separator = authorizeUrl.includes('?') ? '&' : '?';
+    const url = `${authorizeUrl}${separator}${params.toString()}`;
+
     this.logger.log('[Aiqfome] connect-url gerada');
     return { url, state };
   }
 
-  async handleOAuthCallback(code: string, state: string) { this.logger.log('[Aiqfome] callback recebido'); if (!code || !state) throw new BadRequestException('code/state obrigatórios'); const decoded = JSON.parse(Buffer.from(state, 'base64url').toString('utf8')); return this.exchangeCodeForToken(code, decoded.shopkeeperId, decoded.storeId); }
+  async handleOAuthCallback(code: string, state: string) {
+    this.logger.log('[Aiqfome] callback recebido');
+    if (!code || !state) throw new BadRequestException('code/state obrigatórios');
+    const decoded = JSON.parse(Buffer.from(state, 'base64url').toString('utf8'));
+    return this.exchangeCodeForToken(code, decoded.shopkeeperId, decoded.storeId);
+  }
 
   async exchangeCodeForToken(code: string, shopkeeperId: string, storeId?: string) {
-    const tokenResp = await axios.post(process.env.AIQFOME_AUTH_TOKEN_URL || 'https://id.magalu.com/oauth/token', new URLSearchParams({ grant_type: 'authorization_code', code, client_id: process.env.AIQFOME_CLIENT_ID || '', client_secret: process.env.AIQFOME_CLIENT_SECRET || '', redirect_uri: process.env.AIQFOME_REDIRECT_URI || '' }), { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+    const tokenResp = await axios.post(
+      this.requireEnv('AIQFOME_AUTH_TOKEN_URL'),
+      new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        client_id: this.requireEnv('AIQFOME_CLIENT_ID'),
+        client_secret: this.requireEnv('AIQFOME_CLIENT_SECRET'),
+        redirect_uri: this.requireEnv('AIQFOME_REDIRECT_URI'),
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+    );
     const tokenData = tokenResp.data || {};
     const accessToken = String(tokenData.access_token || '');
-    const storesResp = await axios.get(`${process.env.AIQFOME_API_BASE_URL}/api/v2/store`, { headers: { Authorization: `Bearer ${accessToken}` } }).catch(() => ({ data: [] }));
+    const storesResp = await axios
+      .get(this.buildAiqfomeUrl('/store'), {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      .catch(() => ({ data: [] }));
     this.logger.log('[Aiqfome] lojas autorizadas consultadas');
-    const firstStore = Array.isArray(storesResp.data) ? storesResp.data[0] : storesResp.data?.data?.[0];
+    const firstStore = Array.isArray(storesResp.data)
+      ? storesResp.data[0]
+      : storesResp.data?.data?.[0];
     const finalStoreId = String(storeId || firstStore?.id || '');
-    const entity = await this.repo.save({ id: uuid(), shopkeeperId, aiqfomeStoreId: finalStoreId, storeName: String(firstStore?.name || finalStoreId || 'aiqfome'), accessToken, refreshToken: String(tokenData.refresh_token || ''), tokenExpiresAt: addSeconds(new Date(), Number(tokenData.expires_in || 3600)), scopes: Array.isArray(tokenData.scope) ? tokenData.scope : String(tokenData.scope || '').split(' ').filter(Boolean), active: true, createdAt: new Date(), updatedAt: new Date() });
+    const entity = await this.repo.save({
+      id: uuid(),
+      shopkeeperId,
+      aiqfomeStoreId: finalStoreId,
+      storeName: String(firstStore?.name || finalStoreId || 'aiqfome'),
+      accessToken,
+      refreshToken: String(tokenData.refresh_token || ''),
+      tokenExpiresAt: addSeconds(new Date(), Number(tokenData.expires_in || 3600)),
+      scopes: Array.isArray(tokenData.scope)
+        ? tokenData.scope
+        : String(tokenData.scope || '').split(' ').filter(Boolean),
+      active: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
     this.logger.log('[Aiqfome] token trocado e salvo');
     return entity;
   }
 
-  async refreshToken(integrationId: string) { const i = await this.repo.findOneBy({ id: integrationId }); if (!i) throw new BadRequestException('Integração não encontrada'); const resp = await axios.post(process.env.AIQFOME_AUTH_TOKEN_URL || 'https://id.magalu.com/oauth/token', new URLSearchParams({ grant_type: 'refresh_token', refresh_token: i.refreshToken, client_id: process.env.AIQFOME_CLIENT_ID || '', client_secret: process.env.AIQFOME_CLIENT_SECRET || '' }), { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }); i.accessToken = String(resp.data?.access_token || i.accessToken); i.refreshToken = String(resp.data?.refresh_token || i.refreshToken); i.tokenExpiresAt = addSeconds(new Date(), Number(resp.data?.expires_in || 3600)); i.updatedAt = new Date(); this.logger.log('[Aiqfome] token renovado'); return this.repo.save(i); }
-  listStores(shopkeeperId: string) { return this.repo.find({ where: { shopkeeperId, active: true } as any }); }
-  async saveCompanyConfig(companyId: string, body: any) { return this.users.updateOne({ id: companyId } as any, { $set: { useAiqfomeIntegration: !!body.useAiqfomeIntegration, aiqfomeStores: body.aiqfomeStores || [], aiqfomeStoreId: body.aiqfomeStoreId || '' } } as any); }
-  async registerWebhookById(integrationId: string) { const i = await this.repo.findOneBy({ id: integrationId }); if (!i) throw new BadRequestException('Integração não encontrada'); return this.registerWebhook(i); }
-  async registerWebhook(integration: AiqfomeIntegrationEntity) { return axios.post(`${process.env.AIQFOME_API_BASE_URL}/api/v2/store/${integration.aiqfomeStoreId}/webhooks`, { url: `${process.env.BACKEND_PUBLIC_URL}/api/aiqfome/webhook`, secret: process.env.AIQFOME_WEBHOOK_SECRET, events: ['new-order', 'ready-order', 'cancel-order', 'order-refund', 'order-logistic'] }, { headers: { Authorization: `Bearer ${integration.accessToken}` } }); }
+  async refreshToken(integrationId: string) {
+    const integration = await this.repo.findOneBy({ id: integrationId });
+    if (!integration) throw new BadRequestException('Integração aiqfome não encontrada.');
 
-  async handleWebhook(headers: Record<string, string>, payload: any) {
-    const auth = headers.authorization || headers.Authorization; const ua = headers['user-agent'] || '';
-    const secret = process.env.AIQFOME_WEBHOOK_SECRET || '';
-    if (!(auth === secret || auth === `Bearer ${secret}`)) { this.logger.warn('[Aiqfome] webhook ignorado por auth inválida'); return; }
-    if (ua && !ua.toLowerCase().includes('aiqfome')) return;
-    this.logger.log('[Aiqfome] webhook recebido');
-    const event = String(payload?.event || ''); const storeId = String(payload?.store_id || payload?.storeId || payload?.data?.store_id || payload?.data?.store?.id || ''); const orderId = String(payload?.order_id || payload?.orderId || payload?.data?.order_id || payload?.data?.id || payload?.data?.order?.id || '');
-    const integration = await this.repo.findOneBy({ aiqfomeStoreId: storeId, active: true } as any); if (!integration) { this.logger.warn('[Aiqfome] integração não encontrada para storeId'); return; }
-    if (['new-order', 'read-order', 'ready-order'].includes(event)) await this.importOrder(integration.id, orderId, storeId);
+    const resp = await axios.post(
+      this.requireEnv('AIQFOME_AUTH_TOKEN_URL'),
+      new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: integration.refreshToken,
+        client_id: this.requireEnv('AIQFOME_CLIENT_ID'),
+        client_secret: this.requireEnv('AIQFOME_CLIENT_SECRET'),
+        redirect_uri: this.requireEnv('AIQFOME_REDIRECT_URI') || '',
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+    );
+
+    integration.accessToken = String(resp.data?.access_token || integration.accessToken);
+    integration.refreshToken = String(resp.data?.refresh_token || integration.refreshToken);
+    integration.tokenExpiresAt = addSeconds(new Date(), Number(resp.data?.expires_in || 3600));
+    integration.updatedAt = new Date();
+    this.logger.log('[Aiqfome] token renovado');
+    return this.repo.save(integration);
   }
 
-  async fetchOrderDetails(integration: AiqfomeIntegrationEntity, orderId: string) { return (await axios.get(`${process.env.AIQFOME_API_BASE_URL}/api/v2/orders/${orderId}`, { headers: { Authorization: `Bearer ${integration.accessToken}` } })).data; }
+  listStores(shopkeeperId: string) {
+    return this.repo.find({ where: { shopkeeperId, active: true } as any });
+  }
+
+  async registerWebhookById(integrationId: string) {
+    const integration = await this.repo.findOneBy({ id: integrationId });
+    if (!integration) throw new BadRequestException('Integração aiqfome não encontrada.');
+    return this.registerWebhook(integration);
+  }
+
+  async registerWebhook(integration: AiqfomeIntegrationEntity) {
+    const validIntegration = await this.ensureValidToken(integration);
+    const webhookSecret = this.requireEnv('AIQFOME_WEBHOOK_SECRET');
+    const backendPublicUrl = this.requireEnv('BACKEND_PUBLIC_URL').replace(/\/+$/, '');
+
+    return axios.post(
+      this.buildAiqfomeUrl(`/store/${validIntegration.aiqfomeStoreId}/webhooks`),
+      {
+        url: `${backendPublicUrl}/api/aiqfome/webhook`,
+        secret: webhookSecret,
+        events: ['new-order', 'ready-order', 'cancel-order', 'order-refund', 'order-logistic'],
+      },
+      { headers: { Authorization: `Bearer ${validIntegration.accessToken}` } },
+    );
+  }
+
+  async handleWebhook(headers: Record<string, string>, payload: any) {
+    try {
+      const auth = headers.authorization || headers.Authorization;
+      const ua = headers['user-agent'] || headers['User-Agent'] || '';
+      const secret = process.env.AIQFOME_WEBHOOK_SECRET || '';
+
+      if (!secret || !(auth === secret || auth === `Bearer ${secret}`)) {
+        this.logger.warn('[Aiqfome] webhook ignorado por auth inválida');
+        return;
+      }
+
+      if (ua && !String(ua).toLowerCase().includes('aiqfome')) {
+        this.logger.warn('[Aiqfome] webhook ignorado por User-Agent inválido');
+        return;
+      }
+
+      const event = String(
+        payload?.event || payload?.type || payload?.event_type || payload?.data?.event || '',
+      );
+      const storeId = String(
+        payload?.store_id ||
+          payload?.storeId ||
+          payload?.store?.id ||
+          payload?.data?.store_id ||
+          payload?.data?.storeId ||
+          payload?.data?.store?.id ||
+          '',
+      );
+      const orderId = String(
+        payload?.order_id ||
+          payload?.orderId ||
+          payload?.order?.id ||
+          payload?.data?.order_id ||
+          payload?.data?.orderId ||
+          payload?.data?.id ||
+          payload?.data?.order?.id ||
+          '',
+      );
+
+      if (!storeId || !orderId) {
+        this.logger.warn(`[Aiqfome] webhook sem storeId/orderId. event=${event || 'N/A'}`);
+        return;
+      }
+
+      const integration = await this.repo.findOneBy({ aiqfomeStoreId: storeId, active: true } as any);
+      if (!integration) {
+        this.logger.warn(`[Aiqfome] integração não encontrada para storeId=${storeId}`);
+        return;
+      }
+
+      this.logger.log(`[Aiqfome] webhook recebido event=${event} storeId=${storeId} orderId=${orderId}`);
+
+      if (['new-order', 'read-order', 'ready-order'].includes(event)) {
+        await this.importOrder(integration.id, orderId, storeId);
+        return;
+      }
+
+      const link = await this.linkService.findByAiqfomeOrderId(orderId, storeId);
+
+      if (event === 'cancel-order') {
+        if (!link?.deliveryId) {
+          this.logger.warn(`[Aiqfome] cancel-order sem vínculo local. orderId=${orderId}`);
+          return;
+        }
+
+        await this.deliveries.updateOne(
+          { id: link.deliveryId } as any,
+          {
+            $set: {
+              status: StatusDelivery.CANCELED,
+              isActive: false,
+              externalStatus: 'aiqfome:cancel-order',
+              updatedAt: new Date(),
+            },
+          } as any,
+        );
+        this.logger.warn(`[Aiqfome] entrega cancelada/desativada por webhook. deliveryId=${link.deliveryId}`);
+        return;
+      }
+
+      if (event === 'order-refund') {
+        this.logger.warn(`[Aiqfome] order-refund recebido. orderId=${orderId} storeId=${storeId}`);
+        return;
+      }
+
+      if (event === 'order-logistic') {
+        if (link?.deliveryId) {
+          const status = String(payload?.status || payload?.data?.status || payload?.data?.logistic_status || event);
+          await this.deliveries.updateOne(
+            { id: link.deliveryId } as any,
+            { $set: { logisticsStatus: status, externalStatus: `aiqfome:${status}`, updatedAt: new Date() } } as any,
+          );
+          this.logger.log(`[Aiqfome] status logístico recebido. deliveryId=${link.deliveryId} status=${status}`);
+        } else {
+          this.logger.log(`[Aiqfome] order-logistic sem vínculo local. orderId=${orderId}`);
+        }
+        return;
+      }
+
+      this.logger.log(`[Aiqfome] evento sem tratamento específico: ${event || 'N/A'}`);
+    } catch (error: any) {
+      this.logger.error(`[Aiqfome] erro ao tratar webhook: ${error?.message || error}`, error?.stack || error);
+    }
+  }
+
+  async fetchOrderDetails(integration: AiqfomeIntegrationEntity, orderId: string) {
+    let validIntegration = await this.ensureValidToken(integration);
+
+    const request = () =>
+      axios.get(this.buildAiqfomeUrl(`/orders/${orderId}`), {
+        headers: { Authorization: `Bearer ${validIntegration.accessToken}` },
+      });
+
+    try {
+      return (await request()).data;
+    } catch (error: any) {
+      if (error?.response?.status === 401) {
+        validIntegration = await this.refreshToken(validIntegration.id);
+        try {
+          return (await request()).data;
+        } catch (retryError: any) {
+          this.logger.error(
+            `[Aiqfome] erro ao buscar pedido após refresh. status=${retryError?.response?.status || retryError?.status || 'N/A'} body=${this.summarizeErrorBody(retryError?.response?.data)}`,
+          );
+          throw retryError;
+        }
+      }
+
+      this.logger.error(
+        `[Aiqfome] erro ao buscar pedido. status=${error?.response?.status || error?.status || 'N/A'} body=${this.summarizeErrorBody(error?.response?.data)}`,
+      );
+      throw error;
+    }
+  }
+
+  private isFinalizedOrCanceledOrder(order: any) {
+    const status = String(
+      order?.status || order?.data?.status || order?.timeline?.status || '',
+    ).toLowerCase();
+    const timelineValues = Object.values(order?.timeline || {})
+      .filter(Boolean)
+      .map((value) => String(value).toLowerCase())
+      .join(' ');
+
+    return Boolean(
+      order?.is_cancelled ||
+        order?.is_delivered ||
+        order?.timeline?.cancelled_at ||
+        ['cancel', 'canceled', 'cancelled', 'delivered', 'finished', 'finalized', 'concluded'].some(
+          (token) => status.includes(token) || timelineValues.includes(token),
+        ),
+    );
+  }
 
   async importOrder(integrationId?: string, orderId?: string, storeId?: string) {
-    const integration = integrationId ? await this.repo.findOneBy({ id: integrationId }) : await this.repo.findOneBy({ aiqfomeStoreId: storeId || '' } as any); if (!integration || !orderId) return;
-    const duplicate = await this.linkService.findByAiqfomeOrderId(orderId, integration.aiqfomeStoreId); if (duplicate) { this.logger.log('[Aiqfome] pedido já importado ignorado'); return duplicate; }
-    let order: any; try { order = await this.fetchOrderDetails(integration, orderId); } catch { this.logger.error('[Aiqfome] erro ao buscar pedido'); return; }
-    if (order?.is_cancelled || order?.is_delivered || order?.timeline?.cancelled_at) { this.logger.log('[Aiqfome] pedido cancelado/finalizado ignorado'); return; }
-    const mapped = this.mapAiqfomeOrderToDelivery(order, orderId);
-    const result = await this.deliveryService.createDelivery({ ...mapped, establishmentId: integration.shopkeeperId, status: StatusDelivery.AWAITING_RELEASE }, { id: integration.shopkeeperId } as any, { skipCreditConsumption: true, creditOrderId: orderId });
-    await this.linkService.createLink({ aiqfomeOrderId: orderId, aiqfomeDisplayId: String(order?.display_id || ''), storeId: integration.aiqfomeStoreId, storeName: integration.storeName, deliveryId: result.id, shopkeeperId: integration.shopkeeperId });
-    this.logger.log('[Aiqfome] vínculo criado'); this.logger.log('[Aiqfome] pedido importado');
-    await axios.post(`${process.env.AIQFOME_API_BASE_URL}/api/v2/orders/${orderId}/mark-as-read`, {}, { headers: { Authorization: `Bearer ${integration.accessToken}` } }).catch(() => undefined);
-    this.logger.log('[Aiqfome] mark-as-read enviado');
+    const normalizedOrderId = String(orderId || '').trim();
+    if (!normalizedOrderId) {
+      this.logger.warn('[Aiqfome] importação ignorada: orderId vazio');
+      return { success: false, message: 'orderId obrigatório para importar pedido aiqfome.' };
+    }
+
+    const integration = integrationId
+      ? await this.repo.findOneBy({ id: integrationId })
+      : await this.repo.findOneBy({ aiqfomeStoreId: storeId || '', active: true } as any);
+
+    if (!integration) {
+      this.logger.warn('[Aiqfome] importação ignorada: integração não encontrada');
+      return { success: false, message: 'Integração aiqfome não encontrada.' };
+    }
+
+    const duplicate = await this.linkService.findByAiqfomeOrderId(
+      normalizedOrderId,
+      integration.aiqfomeStoreId,
+    );
+    if (duplicate) {
+      this.logger.log('[Aiqfome] pedido já importado ignorado');
+      return duplicate;
+    }
+
+    let order: any;
+    try {
+      order = await this.fetchOrderDetails(integration, normalizedOrderId);
+    } catch {
+      this.logger.error('[Aiqfome] erro ao buscar pedido para importação');
+      return { success: false, message: 'Erro ao buscar detalhes do pedido aiqfome.' };
+    }
+
+    if (this.isFinalizedOrCanceledOrder(order)) {
+      this.logger.log('[Aiqfome] pedido cancelado/finalizado ignorado');
+      return { success: false, message: 'Pedido aiqfome cancelado ou finalizado não importado.' };
+    }
+
+    const mapped = this.mapAiqfomeOrderToDelivery(order, normalizedOrderId);
+    const result = await this.deliveryService.createDelivery(
+      {
+        ...mapped,
+        establishmentId: integration.shopkeeperId,
+        status: StatusDelivery.AWAITING_RELEASE,
+      },
+      { id: integration.shopkeeperId } as any,
+      { skipCreditConsumption: true, creditOrderId: normalizedOrderId },
+    );
+
+    await this.linkService.createLink({
+      aiqfomeOrderId: normalizedOrderId,
+      aiqfomeDisplayId: String(order?.display_id || order?.displayId || order?.data?.display_id || ''),
+      storeId: integration.aiqfomeStoreId,
+      storeName: integration.storeName,
+      deliveryId: result.id,
+      shopkeeperId: integration.shopkeeperId,
+    });
+    this.logger.log('[Aiqfome] vínculo criado');
+    this.logger.log('[Aiqfome] pedido importado');
+
+    this.markOrderAsRead(integration, normalizedOrderId).catch((error: any) => {
+      this.logger.warn(`[Aiqfome] falha ao enviar mark-as-read: ${error?.message || error}`);
+    });
+
     return result;
   }
 
-  mapAiqfomeOrderToDelivery(order: any, orderId: string) { return { clientName: `${order?.data?.user?.name || ''} ${order?.data?.user?.surname || ''}`.trim() || 'Cliente aiqfome', clientPhone: String(order?.data?.user?.mobile_phone || order?.data?.user?.phone_number || order?.data?.user?.address?.phone || '').replace(/\D/g, ''), clientAddress: `${order?.data?.user?.address?.street_name || ''}, ${order?.data?.user?.address?.number || ''}`.trim(), observation: `Pedido aiqfome #${orderId}`, payment: PaymentType.CARTAO, value: String(order?.payment_method?.total || order?.payment_method?.subtotal || 0), soda: 'NÃO' }; }
-  async syncStatus(deliveryId: string) { const link = await this.linkService.findByDeliveryId(deliveryId); if (!link) return { success: true }; this.logger.log('[Aiqfome] status logístico sincronizado'); return { success: true }; }
-  async syncStatusFromDelivery() { return; }
+  private async markOrderAsRead(integration: AiqfomeIntegrationEntity, orderId: string) {
+    const validIntegration = await this.ensureValidToken(integration);
+    await axios.post(
+      this.buildAiqfomeUrl(`/orders/${orderId}/mark-as-read`),
+      {},
+      { headers: { Authorization: `Bearer ${validIntegration.accessToken}` } },
+    );
+    this.logger.log('[Aiqfome] mark-as-read enviado');
+  }
+
+  private parseNumber(value: any) {
+    const normalized = Number(String(value ?? '').replace(',', '.'));
+    return Number.isFinite(normalized) ? normalized : 0;
+  }
+
+  private resolvePaymentType(paymentMethod: any) {
+    const methodText = String(
+      paymentMethod?.name || paymentMethod?.method || paymentMethod?.type || paymentMethod?.description || '',
+    ).toLowerCase();
+
+    if (paymentMethod?.pre_paid === true || paymentMethod?.prepaid === true) {
+      return PaymentType.PAGO;
+    }
+    if (methodText.includes('pix')) return PaymentType.PIX;
+    if (methodText.includes('dinheiro') || methodText.includes('cash')) return PaymentType.DINHEIRO;
+    return PaymentType.CARTAO;
+  }
+
+  mapAiqfomeOrderToDelivery(order: any, orderId: string) {
+    const data = order?.data || order || {};
+    const user = data?.user || order?.user || {};
+    const address = user?.address || data?.address || order?.address || {};
+    const paymentMethod = order?.payment_method || data?.payment_method || order?.paymentMethod || {};
+    const items = Array.isArray(data?.items)
+      ? data.items
+      : Array.isArray(order?.items)
+        ? order.items
+        : [];
+    const latitude = this.parseNumber(address?.latitude || address?.lat);
+    const longitude = this.parseNumber(address?.longitude || address?.lng || address?.lon);
+    const clientName = `${user?.name || ''} ${user?.surname || ''}`.trim() ||
+      String(data?.user_name || order?.user_name || '').trim() ||
+      'Cliente aiqfome';
+    const clientPhone = String(
+      user?.mobile_phone || user?.phone_number || address?.phone || '',
+    ).replace(/\D/g, '');
+    const street = String(address?.street_name || address?.street || '').trim();
+    const number = String(address?.number || '').trim();
+    const complement = String(address?.complement || '').trim();
+    const reference = String(address?.reference || '').trim();
+    const neighborhood = String(address?.neighborhood_name || address?.neighborhood || '').trim();
+    const city = String(address?.city_name || address?.city || '').trim();
+    const state = String(address?.state_uf || address?.state || '').trim();
+    const zipCode = String(address?.zip_code || address?.zipcode || '').trim();
+    const clientAddress = [street, number].filter(Boolean).join(', ');
+    const addressLine = [clientAddress, complement, neighborhood, city, state, zipCode]
+      .filter(Boolean)
+      .join(' - ');
+    const displayId = String(order?.display_id || order?.displayId || data?.display_id || '').trim();
+    const itemLines = items.map((item) => {
+      const quantity = item?.quantity || item?.amount || item?.qty || 1;
+      const name = item?.name || item?.title || item?.description || 'Item';
+      return `${quantity}x ${name}`;
+    });
+    const orderNotes = String(order?.observation || data?.observation || data?.notes || order?.notes || '').trim();
+    const paymentDescription = String(
+      paymentMethod?.name || paymentMethod?.method || paymentMethod?.description || paymentMethod?.type || '',
+    ).trim();
+    const changeFor = paymentMethod?.change_for || paymentMethod?.changeFor || paymentMethod?.change;
+    const total =
+      this.parseNumber(paymentMethod?.total) ||
+      this.parseNumber(paymentMethod?.subtotal) ||
+      this.parseNumber(order?.total || data?.total);
+    const observation = [
+      `Pedido aiqfome #${orderId}`,
+      displayId ? `ID visível: ${displayId}` : '',
+      itemLines.length ? `Itens:\n${itemLines.join('\n')}` : '',
+      orderNotes ? `Observações do pedido: ${orderNotes}` : '',
+      paymentDescription ? `Forma de pagamento: ${paymentDescription}` : '',
+      changeFor ? `Troco para: ${changeFor}` : '',
+      addressLine ? `Endereço: ${addressLine}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    return {
+      clientName,
+      clientPhone,
+      clientAddress,
+      addressComplement: complement,
+      addressReference: reference,
+      addressNeighborhood: neighborhood,
+      addressCity: city,
+      addressState: state,
+      addressZipCode: zipCode,
+      addressLatitude: latitude || undefined,
+      addressLongitude: longitude || undefined,
+      addressMapsUrl: latitude && longitude ? `https://www.google.com/maps?q=${latitude},${longitude}` : undefined,
+      observation,
+      payment: this.resolvePaymentType(paymentMethod),
+      value: String(total || 0),
+      soda: 'NÃO',
+    };
+  }
+
+  async syncStatus(deliveryId: string) {
+    const link = await this.linkService.findByDeliveryId(deliveryId);
+    if (!link) return { success: true };
+    const delivery = await this.deliveries.findOneBy({ id: deliveryId } as any);
+    await this.syncStatusFromDelivery(delivery, delivery);
+    return { success: true };
+  }
+
+  async syncStatusFromDelivery(previousDelivery?: DeliveryEntity, nextDelivery?: DeliveryEntity) {
+    const deliveryId = previousDelivery?.id || nextDelivery?.id;
+    const nextStatus = nextDelivery?.status;
+
+    if (!deliveryId || !nextStatus) return;
+
+    const link = await this.linkService.findByDeliveryId(deliveryId);
+    if (!link) return;
+
+    const integration = await this.repo.findOneBy({
+      aiqfomeStoreId: link.storeId,
+      shopkeeperId: link.shopkeeperId,
+      active: true,
+    } as any);
+
+    if (!integration) {
+      this.logger.warn(`[Aiqfome] integração não encontrada para sincronizar status. deliveryId=${deliveryId}`);
+      return;
+    }
+
+    const steps: Array<{
+      status: StatusDelivery;
+      endpointPath: string;
+      flagName: keyof AiqfomeOrderLinkEntity;
+    }> = [
+      { status: StatusDelivery.ONCOURSE, endpointPath: 'pickup-ongoing', flagName: 'pickupOngoingSynced' },
+      { status: StatusDelivery.ARRIVED_AT_STORE, endpointPath: 'arrived-at-merchant', flagName: 'arrivedAtMerchantSynced' },
+      { status: StatusDelivery.COLLECTED, endpointPath: 'delivery-ongoing', flagName: 'deliveryOngoingSynced' },
+      { status: StatusDelivery.ARRIVED_AT_DESTINATION, endpointPath: 'arrived-at-customer', flagName: 'arrivedAtCustomerSynced' },
+      {
+        status: StatusDelivery.FINISHED,
+        endpointPath: String(process.env.AIQFOME_DELIVERED_ENDPOINT_PATH || 'mark-as-delivered').replace(/^\/+/, ''),
+        flagName: 'deliveredSynced',
+      },
+    ];
+
+    const targetIndex = steps.findIndex((step) => step.status === nextStatus);
+    if (targetIndex < 0) return;
+
+    let currentLink = link;
+    for (const step of steps.slice(0, targetIndex + 1)) {
+      if (currentLink?.[step.flagName]) continue;
+
+      try {
+        const updated = await this.postLogisticStatus(
+          integration,
+          currentLink,
+          `/orders/${currentLink.aiqfomeOrderId}/${step.endpointPath}`,
+          step.flagName,
+        );
+        currentLink = updated || ({ ...currentLink, [step.flagName]: true } as AiqfomeOrderLinkEntity);
+      } catch (error: any) {
+        this.logger.warn(
+          `[Aiqfome] falha ao sincronizar status logístico ${step.endpointPath}. deliveryId=${deliveryId} status=${error?.response?.status || error?.status || 'N/A'} body=${this.summarizeErrorBody(error?.response?.data)} message=${error?.message || error}`,
+        );
+        break;
+      }
+    }
+  }
+
+  private async postLogisticStatus(
+    integration: AiqfomeIntegrationEntity,
+    link: AiqfomeOrderLinkEntity,
+    endpointPath: string,
+    flagName: keyof AiqfomeOrderLinkEntity,
+  ) {
+    const validIntegration = await this.ensureValidToken(integration);
+    await axios.post(
+      this.buildAiqfomeUrl(endpointPath),
+      {},
+      { headers: { Authorization: `Bearer ${validIntegration.accessToken}` } },
+    );
+    this.logger.log(
+      `[Aiqfome] status logístico enviado endpoint=${endpointPath} orderId=${link.aiqfomeOrderId}`,
+    );
+    return this.linkService.updateSyncFlags(link.deliveryId, { [flagName]: true } as any);
+  }
 }

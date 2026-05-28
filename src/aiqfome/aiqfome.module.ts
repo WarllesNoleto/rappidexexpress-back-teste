@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AiqfomeController } from './aiqfome.controller';
 import { AiqfomeService } from './aiqfome.service';
@@ -7,7 +7,7 @@ import { DeliveryModule } from '../delivery/delivery.module';
 import { AiqfomeOrderLinkService } from './aiqfome-order-link.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([AiqfomeIntegrationEntity, AiqfomeOrderLinkEntity, UserEntity, DeliveryEntity]), DeliveryModule],
+  imports: [TypeOrmModule.forFeature([AiqfomeIntegrationEntity, AiqfomeOrderLinkEntity, UserEntity, DeliveryEntity]), forwardRef(() => DeliveryModule)],
   controllers: [AiqfomeController],
   providers: [AiqfomeService, AiqfomeOrderLinkService],
   exports: [AiqfomeService],
