@@ -7,9 +7,11 @@ import {
   Param,
   Post,
   Query,
+  Res,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { JwtAuthGuard } from '../authenticator/guards/jwt-auth.guard';
 import { User } from '../shared/decorators';
 import { UserRequest } from '../shared/interfaces';
@@ -49,7 +51,21 @@ export class AiqfomeController {
   }
 
   @Get('callback')
-  callback(@Query('code') code: string, @Query('state') state: string) { return this.aiqfomeService.handleOAuthCallback(code, state); }
+  async callback(
+    @Query('code') code: string,
+    @Query('state') state: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.aiqfomeService.handleOAuthCallback(code, state);
+    const frontendPublicUrl = String(process.env.FRONTEND_PUBLIC_URL || '').trim().replace(/\/+$/, '');
+
+    if (frontendPublicUrl) {
+      response.redirect(`${frontendPublicUrl}/empresas-cadastradas?aiqfome=connected`);
+      return;
+    }
+
+    return result;
+  }
 
   @Post('import-order')
   @UseGuards(JwtAuthGuard)

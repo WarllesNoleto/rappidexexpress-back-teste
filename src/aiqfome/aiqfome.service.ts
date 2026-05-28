@@ -53,7 +53,11 @@ export class AiqfomeService {
   private summarizeErrorBody(data: any) {
     if (!data) return '';
     const raw = typeof data === 'string' ? data : JSON.stringify(data);
-    return raw.replace(/access_token"?\s*:\s*"[^"]+"/gi, 'access_token":"[redacted]"').slice(0, 600);
+
+    return raw
+      .replace(/(access_token|refresh_token|token)"?\s*:\s*"[^"]+"/gi, '$1":"[redacted]"')
+      .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
+      .slice(0, 600);
   }
 
   private async ensureValidToken(integration: AiqfomeIntegrationEntity) {
@@ -133,12 +137,26 @@ export class AiqfomeService {
     );
     const tokenData = tokenResp.data || {};
     const accessToken = String(tokenData.access_token || '');
-    const storesResp = await axios
-      .get(this.buildAiqfomeUrl('/store'), {
+    let storesResp;
+
+    try {
+      storesResp = await axios.get(this.buildAiqfomeUrl('/store'), {
         headers: { Authorization: `Bearer ${accessToken}` },
-      })
-      .catch(() => ({ data: [] }));
-    this.logger.log('[Aiqfome] lojas autorizadas consultadas');
+      });
+      this.logger.log('[Aiqfome] lojas autorizadas consultadas');
+    } catch (error) {
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      const body = axios.isAxiosError(error) ? this.summarizeErrorBody(error.response?.data) : '';
+      const message = error instanceof Error ? error.message : String(error);
+
+      this.logger.error(
+        `[Aiqfome] erro ao consultar lojas autorizadas no callback. status HTTP: ${status ?? 'indisponível'}; body: ${body || 'sem body'}; mensagem: ${message}`,
+      );
+
+      throw new BadRequestException(
+        'Não foi possível consultar as lojas autorizadas no aiqfome. Verifique AIQFOME_API_BASE_URL, token e permissões.',
+      );
+    }
     const stores = Array.isArray(storesResp.data)
       ? storesResp.data
       : Array.isArray(storesResp.data?.data)
@@ -184,6 +202,13 @@ export class AiqfomeService {
       active: true,
       updatedAt: new Date(),
     });
+
+    if (existingIntegration) {
+      this.logger.log('[Aiqfome] integração existente atualizada');
+    } else {
+      this.logger.log('[Aiqfome] nova integração criada');
+    }
+
     this.logger.log('[Aiqfome] token trocado e salvo');
     return entity;
   }
