@@ -90,6 +90,7 @@ export class AiqfomeService {
       response_type: 'code',
       scope: scopes,
       state,
+      choose_tenants: 'true',
     });
     const separator = authorizeUrl.includes('?') ? '&' : '?';
     const url = `${authorizeUrl}${separator}${params.toString()}`;
