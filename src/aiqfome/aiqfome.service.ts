@@ -84,18 +84,17 @@ export class AiqfomeService {
       JSON.stringify({ shopkeeperId, storeId: storeId || '', nonce: uuid() }),
     ).toString('base64url');
 
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      response_type: 'code',
-      scope: scopes,
-      state,
-      choose_tenants: 'true',
-    });
+    const params = new URLSearchParams();
+    params.set('client_id', clientId);
+    params.set('redirect_uri', redirectUri);
+    params.set('scope', scopes);
+    params.set('response_type', 'code');
+    params.set('state', state);
+    params.set('choose_tenants', 'true');
     const separator = authorizeUrl.includes('?') ? '&' : '?';
     const url = `${authorizeUrl}${separator}${params.toString()}`;
 
-    this.logger.log('[Aiqfome] connect-url gerada');
+    this.logger.log('[Aiqfome] connect-url gerada com choose_tenants=true');
     return { url, state };
   }
 
