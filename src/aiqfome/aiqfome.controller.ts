@@ -88,6 +88,27 @@ export class AiqfomeController {
     return this.aiqfomeService.registerWebhookById(integrationId);
   }
 
+  @Post('register-webhooks/:shopkeeperId')
+  @UseGuards(JwtAuthGuard)
+  registerWebhooksDiagnostic(@User() user: UserRequest, @Param('shopkeeperId') shopkeeperId: string) {
+    this.ensureSensitiveRouteAccess(user);
+    return this.aiqfomeService.registerStoreWebhooksDiagnostic(shopkeeperId);
+  }
+
+  @Get('debug/integration/:shopkeeperId')
+  @UseGuards(JwtAuthGuard)
+  debugIntegration(@User() user: UserRequest, @Param('shopkeeperId') shopkeeperId: string) {
+    this.ensureSensitiveRouteAccess(user);
+    return this.aiqfomeService.getIntegrationDebug(shopkeeperId);
+  }
+
+  @Get('debug/store/:shopkeeperId')
+  @UseGuards(JwtAuthGuard)
+  debugStore(@User() user: UserRequest, @Param('shopkeeperId') shopkeeperId: string) {
+    this.ensureSensitiveRouteAccess(user);
+    return this.aiqfomeService.getStoreDebug(shopkeeperId);
+  }
+
   @Get('health')
   @UseGuards(JwtAuthGuard)
   health(@User() user: UserRequest) {

@@ -196,13 +196,20 @@ export class AiqfomeService {
     const integration = await this.exchangeCodeForToken(code, shopkeeperId, storeId);
     await this.markPendingAuthorizationAsUsed(pendingAuthorization);
 
+    shopkeeperId = integration.shopkeeperId;
+    storeId = integration.aiqfomeStoreId;
+    this.logger.log(
+      `[Aiqfome] callback OAuth finalizado. shopkeeperId=${shopkeeperId} storeId=${storeId}`,
+    );
+    this.logger.log(`[Aiqfome] iniciando registro automático de webhooks storeId=${storeId}`);
+
     try {
-      await this.registerWebhook(integration);
+      await this.registerStoreWebhooks(shopkeeperId, storeId);
     } catch (error: any) {
       const status = error?.response?.status || error?.status || 'N/A';
       const body = this.summarizeErrorBody(error?.response?.data);
       this.logger.error(
-        `[Aiqfome] erro ao registrar webhooks automaticamente storeId=${integration.aiqfomeStoreId} status=${status} body=${body || 'sem body'} message=${error?.message || error}`,
+        `[Aiqfome] erro ao registrar webhooks automaticamente storeId=${storeId} status=${status} body=${body || 'sem body'} message=${error?.message || error}`,
       );
     }
 
@@ -376,6 +383,99 @@ export class AiqfomeService {
     return this.registerWebhook(integration);
   }
 
+  async registerStoreWebhooks(shopkeeperId: string, storeId: string) {
+    this.logger.log(`[Aiqfome] registerStoreWebhooks chamado storeId=${storeId}`);
+
+    const integration = await this.repo.findOneBy({
+      shopkeeperId,
+      aiqfomeStoreId: storeId,
+      active: true,
+    } as any);
+
+    if (!integration) {
+      throw new BadRequestException('Integração aiqfome não encontrada para o lojista e loja informados.');
+    }
+
+    return this.registerWebhook(integration);
+  }
+
+  async registerStoreWebhooksDiagnostic(shopkeeperId: string) {
+    try {
+      const integration = await this.findActiveIntegrationByShopkeeper(shopkeeperId);
+
+      if (!integration) {
+        return {
+          success: false,
+          shopkeeperId,
+          error: 'Integração aiqfome não encontrada para este lojista.',
+        };
+      }
+
+      const result = await this.registerStoreWebhooks(shopkeeperId, integration.aiqfomeStoreId);
+
+      return {
+        success: true,
+        shopkeeperId,
+        storeId: integration.aiqfomeStoreId,
+        result,
+      };
+    } catch (error: any) {
+      const status = error?.response?.status || error?.status || 'N/A';
+      const body = this.summarizeErrorBody(error?.response?.data);
+
+      return {
+        success: false,
+        shopkeeperId,
+        status,
+        error: body || error?.message || String(error),
+      };
+    }
+  }
+
+  async getIntegrationDebug(shopkeeperId: string) {
+    const integration = await this.findActiveIntegrationByShopkeeper(shopkeeperId);
+    const backendPublicUrl = String(process.env.BACKEND_PUBLIC_URL || '').trim().replace(/\/+$/, '');
+
+    return {
+      shopkeeperId,
+      aiqfomeEnabled: Boolean(integration?.active),
+      storeId: integration?.aiqfomeStoreId || '',
+      hasAccessToken: Boolean(integration?.accessToken),
+      hasRefreshToken: Boolean(integration?.refreshToken),
+      tokenExpiresAt: integration?.tokenExpiresAt || null,
+      webhookUrl: backendPublicUrl ? `${backendPublicUrl}/api/aiqfome/webhook` : '',
+    };
+  }
+
+  async getStoreDebug(shopkeeperId: string) {
+    const integration = await this.findActiveIntegrationByShopkeeper(shopkeeperId);
+
+    if (!integration) {
+      throw new BadRequestException('Integração aiqfome não encontrada para este lojista.');
+    }
+
+    const validIntegration = await this.ensureValidToken(integration);
+    const response = await axios.get('https://plataforma.aiqfome.com/api/v2/store', {
+      headers: { Authorization: `Bearer ${validIntegration.accessToken}` },
+      validateStatus: () => true,
+    });
+
+    return {
+      status: response.status,
+      body: response.data,
+    };
+  }
+
+  private async findActiveIntegrationByShopkeeper(shopkeeperId: string) {
+    const integrations = await this.repo.find({
+      where: { shopkeeperId, active: true } as any,
+      order: { updatedAt: 'DESC' },
+      take: 1,
+    });
+
+    return Array.isArray(integrations) && integrations.length ? integrations[0] : null;
+  }
+
   private extractWebhookEvents(data: any): any[] {
     if (Array.isArray(data)) return data;
     if (Array.isArray(data?.data)) return data.data;
@@ -456,7 +556,7 @@ export class AiqfomeService {
       headers: { Authorization: `Bearer ${validIntegration.accessToken}` },
     });
     const availableWebhookEvents = this.extractWebhookEvents(eventsResponse.data);
-    this.logger.log('[Aiqfome] eventos de webhook disponíveis consultados');
+    this.logger.log(`[Aiqfome] eventos disponíveis consultados status=${eventsResponse.status}`);
 
     const results = [];
 
@@ -465,14 +565,14 @@ export class AiqfomeService {
 
       if (!eventId) {
         this.logger.error(
-          `[Aiqfome] erro ao registrar webhook storeId=${validIntegration.aiqfomeStoreId} status=evento-nao-encontrado body=event=${event}`,
+          `[Aiqfome] erro ao registrar webhook status=evento-nao-encontrado body=event=${event} storeId=${validIntegration.aiqfomeStoreId}`,
         );
         results.push({ event, success: false, error: 'webhook_event_id não encontrado' });
         continue;
       }
 
       this.logger.log(
-        `[Aiqfome] registrando webhook storeId=${validIntegration.aiqfomeStoreId} event=${event} eventId=${eventId}`,
+        `[Aiqfome] registrando webhook storeId=${validIntegration.aiqfomeStoreId} eventId=${eventId} eventName=${event}`,
       );
 
       try {
@@ -491,14 +591,14 @@ export class AiqfomeService {
         );
 
         this.logger.log(
-          `[Aiqfome] webhook registrado com sucesso storeId=${validIntegration.aiqfomeStoreId} event=${event}`,
+          `[Aiqfome] webhook registrado com sucesso storeId=${validIntegration.aiqfomeStoreId} eventName=${event}`,
         );
         results.push({ event, eventId, success: true, status: response.status });
       } catch (error: any) {
         const status = error?.response?.status || error?.status || 'N/A';
         const body = this.summarizeErrorBody(error?.response?.data);
         this.logger.error(
-          `[Aiqfome] erro ao registrar webhook storeId=${validIntegration.aiqfomeStoreId} status=${status} body=${body || 'sem body'}`,
+          `[Aiqfome] erro ao registrar webhook status=${status} body=${body || 'sem body'} storeId=${validIntegration.aiqfomeStoreId} eventName=${event}`,
         );
         results.push({ event, eventId, success: false, status, error: body || error?.message || String(error) });
       }
