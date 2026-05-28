@@ -22,13 +22,19 @@ import { AiqfomeService } from './aiqfome.service';
 export class AiqfomeController {
   constructor(private readonly aiqfomeService: AiqfomeService) {}
 
+  private logDiagnostic(message: string) {
+    console.log(`[Aiqfome] ${message}`);
+  }
+
   private ensureSensitiveRouteAccess(user: UserRequest) {
     if (process.env.AIQFOME_DEBUG_ROUTES_ENABLED === 'true') {
       return;
     }
 
     if (!onlyForAdmin(user?.type)) {
-      throw new UnauthorizedException('Você não tem permissão para esse recurso.');
+      throw new UnauthorizedException(
+        'Você não tem permissão para esse recurso.',
+      );
     }
   }
 
@@ -39,6 +45,7 @@ export class AiqfomeController {
     @Query('shopkeeperId') shopkeeperId: string,
     @Query('storeId') storeId?: string,
   ) {
+    this.logDiagnostic('connect-url chamado');
     this.ensureSensitiveRouteAccess(user);
     return this.aiqfomeService.generateConnectUrl(shopkeeperId, storeId);
   }
@@ -56,11 +63,16 @@ export class AiqfomeController {
     @Query('state') state: string,
     @Res({ passthrough: true }) response: Response,
   ) {
+    this.logDiagnostic('oauth callback recebido');
     const result = await this.aiqfomeService.handleOAuthCallback(code, state);
-    const frontendPublicUrl = String(process.env.FRONTEND_PUBLIC_URL || '').trim().replace(/\/+$/, '');
+    const frontendPublicUrl = String(process.env.FRONTEND_PUBLIC_URL || '')
+      .trim()
+      .replace(/\/+$/, '');
 
     if (frontendPublicUrl) {
-      response.redirect(`${frontendPublicUrl}/clientes-ifood?aiqfome=connected`);
+      response.redirect(
+        `${frontendPublicUrl}/clientes-ifood?aiqfome=connected`,
+      );
       return;
     }
 
@@ -71,7 +83,11 @@ export class AiqfomeController {
   @UseGuards(JwtAuthGuard)
   importOrder(@User() user: UserRequest, @Body() body: any) {
     this.ensureSensitiveRouteAccess(user);
-    return this.aiqfomeService.importOrder(body.integrationId, body.orderId, body.storeId);
+    return this.aiqfomeService.importOrder(
+      body.integrationId,
+      body.orderId,
+      body.storeId,
+    );
   }
 
   @Post('sync-status')
@@ -83,40 +99,63 @@ export class AiqfomeController {
 
   @Post('register-webhook/:integrationId')
   @UseGuards(JwtAuthGuard)
-  registerWebhook(@User() user: UserRequest, @Param('integrationId') integrationId: string) {
+  registerWebhook(
+    @User() user: UserRequest,
+    @Param('integrationId') integrationId: string,
+  ) {
     this.ensureSensitiveRouteAccess(user);
     return this.aiqfomeService.registerWebhookById(integrationId);
   }
 
   @Post('register-webhooks/:shopkeeperId')
   @UseGuards(JwtAuthGuard)
-  registerWebhooksDiagnostic(@User() user: UserRequest, @Param('shopkeeperId') shopkeeperId: string) {
+  registerWebhooksDiagnostic(
+    @User() user: UserRequest,
+    @Param('shopkeeperId') shopkeeperId: string,
+  ) {
     this.ensureSensitiveRouteAccess(user);
     return this.aiqfomeService.registerStoreWebhooksDiagnostic(shopkeeperId);
   }
 
   @Get('debug/integration/:shopkeeperId')
   @UseGuards(JwtAuthGuard)
-  debugIntegration(@User() user: UserRequest, @Param('shopkeeperId') shopkeeperId: string) {
+  debugIntegration(
+    @User() user: UserRequest,
+    @Param('shopkeeperId') shopkeeperId: string,
+  ) {
     this.ensureSensitiveRouteAccess(user);
     return this.aiqfomeService.getIntegrationDebug(shopkeeperId);
   }
 
   @Get('debug/store/:shopkeeperId')
   @UseGuards(JwtAuthGuard)
-  debugStore(@User() user: UserRequest, @Param('shopkeeperId') shopkeeperId: string) {
+  debugStore(
+    @User() user: UserRequest,
+    @Param('shopkeeperId') shopkeeperId: string,
+  ) {
     this.ensureSensitiveRouteAccess(user);
     return this.aiqfomeService.getStoreDebug(shopkeeperId);
   }
 
+  @Get('ping')
+  ping() {
+    this.logDiagnostic('ping chamado');
+    return { ok: true, module: 'aiqfome', at: new Date().toISOString() };
+  }
+
   @Get('health')
-  @UseGuards(JwtAuthGuard)
-  health(@User() user: UserRequest) {
-    this.ensureSensitiveRouteAccess(user);
-    return { ok: true, at: new Date().toISOString() };
+  health() {
+    this.logDiagnostic('health chamado');
+    return { ok: true, module: 'aiqfome', status: 'online' };
   }
 
   @Post('webhook')
   @HttpCode(200)
-  webhook(@Headers() headers: Record<string, string>, @Body() payload: any) { this.aiqfomeService.handleWebhook(headers, payload).catch((error) => { console.error('[Aiqfome] erro assíncrono no webhook', error?.message || error); }); return { success: true }; }
+  webhook(@Headers() headers: Record<string, string>, @Body() payload: any) {
+    this.logDiagnostic('webhook recebido');
+    this.aiqfomeService.handleWebhook(headers, payload).catch(() => {
+      console.error('[Aiqfome] erro assíncrono no webhook');
+    });
+    return { success: true };
+  }
 }
