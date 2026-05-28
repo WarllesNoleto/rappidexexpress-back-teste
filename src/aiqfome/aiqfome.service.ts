@@ -196,6 +196,16 @@ export class AiqfomeService {
     const integration = await this.exchangeCodeForToken(code, shopkeeperId, storeId);
     await this.markPendingAuthorizationAsUsed(pendingAuthorization);
 
+    try {
+      await this.registerWebhook(integration);
+    } catch (error: any) {
+      const status = error?.response?.status || error?.status || 'N/A';
+      const body = this.summarizeErrorBody(error?.response?.data);
+      this.logger.error(
+        `[Aiqfome] erro ao registrar webhooks automaticamente storeId=${integration.aiqfomeStoreId} status=${status} body=${body || 'sem body'} message=${error?.message || error}`,
+      );
+    }
+
     return {
       success: true,
       message: 'Integração aiqfome conectada com sucesso.',
@@ -366,26 +376,166 @@ export class AiqfomeService {
     return this.registerWebhook(integration);
   }
 
+  private extractWebhookEvents(data: any): any[] {
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.data)) return data.data;
+    if (Array.isArray(data?.data?.webhook_events)) return data.data.webhook_events;
+    if (Array.isArray(data?.data?.webhookEvents)) return data.data.webhookEvents;
+    if (Array.isArray(data?.data?.events)) return data.data.events;
+    if (Array.isArray(data?.webhook_events)) return data.webhook_events;
+    if (Array.isArray(data?.webhookEvents)) return data.webhookEvents;
+    if (Array.isArray(data?.events)) return data.events;
+
+    return [];
+  }
+
+  private normalizeWebhookEventValue(value: any) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .replace(/-{2,}/g, '-');
+  }
+
+  private webhookEventAliases(event: string) {
+    const aliases: Record<string, string[]> = {
+      'new-order': ['new-order', 'neworder', 'order-created', 'created-order'],
+      'read-order': ['read-order', 'readorder', 'order-read'],
+      'ready-order': ['ready-order', 'readyorder', 'order-ready'],
+      'cancel-order': ['cancel-order', 'cancelorder', 'order-cancel', 'order-canceled', 'order-cancelled'],
+      'order-refund': ['order-refund', 'orderrefund', 'refund-order'],
+      'order-logistic': ['order-logistic', 'orderlogistic', 'logistic-order'],
+    };
+
+    return aliases[event] || [event];
+  }
+
+  private getWebhookEventId(webhookEvent: any) {
+    return webhookEvent?.webhook_event_id || webhookEvent?.webhookEventId || webhookEvent?.id || webhookEvent?.event_id || webhookEvent?.eventId;
+  }
+
+  private resolveWebhookEventId(webhookEvents: any[], event: string) {
+    const aliases = this.webhookEventAliases(event).map((alias) => this.normalizeWebhookEventValue(alias));
+    const compactAliases = aliases.map((alias) => alias.replace(/-/g, ''));
+
+    const matchedEvent = webhookEvents.find((webhookEvent) => {
+      const searchableValues = [
+        webhookEvent?.name,
+        webhookEvent?.event,
+        webhookEvent?.slug,
+        webhookEvent?.code,
+        webhookEvent?.description,
+      ];
+
+      return searchableValues.some((value) => {
+        const normalizedValue = this.normalizeWebhookEventValue(value);
+        const compactValue = normalizedValue.replace(/-/g, '');
+
+        return (
+          aliases.includes(normalizedValue) ||
+          compactAliases.includes(compactValue) ||
+          aliases.some((alias) => normalizedValue.includes(alias)) ||
+          compactAliases.some((alias) => compactValue.includes(alias))
+        );
+      });
+    });
+
+    return this.getWebhookEventId(matchedEvent);
+  }
+
   async registerWebhook(integration: AiqfomeIntegrationEntity) {
     const validIntegration = await this.ensureValidToken(integration);
     const webhookSecret = this.requireEnv('AIQFOME_WEBHOOK_SECRET');
     const backendPublicUrl = this.requireEnv('BACKEND_PUBLIC_URL').replace(/\/+$/, '');
+    const webhookUrl = `${backendPublicUrl}/api/aiqfome/webhook`;
+    const requiredEvents = ['new-order', 'read-order', 'ready-order', 'cancel-order', 'order-refund', 'order-logistic'];
 
-    const response = await axios.post(
-      this.buildAiqfomeUrl(`/store/${validIntegration.aiqfomeStoreId}/webhooks`),
-      {
-        url: `${backendPublicUrl}/api/aiqfome/webhook`,
-        secret: webhookSecret,
-        events: ['new-order', 'ready-order', 'cancel-order', 'order-refund', 'order-logistic'],
-      },
-      { headers: { Authorization: `Bearer ${validIntegration.accessToken}` } },
-    );
+    const eventsResponse = await axios.get(this.buildAiqfomeUrl('/auxiliary/webhook-events'), {
+      headers: { Authorization: `Bearer ${validIntegration.accessToken}` },
+    });
+    const availableWebhookEvents = this.extractWebhookEvents(eventsResponse.data);
+    this.logger.log('[Aiqfome] eventos de webhook disponíveis consultados');
+
+    const results = [];
+
+    for (const event of requiredEvents) {
+      const eventId = this.resolveWebhookEventId(availableWebhookEvents, event);
+
+      if (!eventId) {
+        this.logger.error(
+          `[Aiqfome] erro ao registrar webhook storeId=${validIntegration.aiqfomeStoreId} status=evento-nao-encontrado body=event=${event}`,
+        );
+        results.push({ event, success: false, error: 'webhook_event_id não encontrado' });
+        continue;
+      }
+
+      this.logger.log(
+        `[Aiqfome] registrando webhook storeId=${validIntegration.aiqfomeStoreId} event=${event} eventId=${eventId}`,
+      );
+
+      try {
+        const response = await axios.post(
+          this.buildAiqfomeUrl(`/store/${validIntegration.aiqfomeStoreId}/webhooks`),
+          {
+            webhooks: [
+              {
+                url: webhookUrl,
+                secret_key: webhookSecret,
+                webhook_event_id: eventId,
+              },
+            ],
+          },
+          { headers: { Authorization: `Bearer ${validIntegration.accessToken}` } },
+        );
+
+        this.logger.log(
+          `[Aiqfome] webhook registrado com sucesso storeId=${validIntegration.aiqfomeStoreId} event=${event}`,
+        );
+        results.push({ event, eventId, success: true, status: response.status });
+      } catch (error: any) {
+        const status = error?.response?.status || error?.status || 'N/A';
+        const body = this.summarizeErrorBody(error?.response?.data);
+        this.logger.error(
+          `[Aiqfome] erro ao registrar webhook storeId=${validIntegration.aiqfomeStoreId} status=${status} body=${body || 'sem body'}`,
+        );
+        results.push({ event, eventId, success: false, status, error: body || error?.message || String(error) });
+      }
+    }
 
     return {
-      success: true,
-      status: response.status,
-      message: 'Webhook aiqfome registrado com sucesso.',
+      success: results.some((result) => result.success),
+      message: 'Registro de webhooks aiqfome processado.',
+      results,
     };
+  }
+
+  private extractWebhookEventName(payload: any) {
+    const rawEvent =
+      payload?.event ||
+      payload?.type ||
+      payload?.event_type ||
+      payload?.eventType ||
+      payload?.webhook_event ||
+      payload?.webhookEvent ||
+      payload?.code ||
+      payload?.data?.event ||
+      payload?.data?.type ||
+      payload?.data?.event_type ||
+      payload?.data?.eventType ||
+      payload?.data?.webhook_event ||
+      payload?.data?.webhookEvent ||
+      payload?.data?.code ||
+      '';
+
+    if (rawEvent && typeof rawEvent === 'object') {
+      return this.normalizeWebhookEventValue(
+        rawEvent?.name || rawEvent?.event || rawEvent?.slug || rawEvent?.code || rawEvent?.description || '',
+      );
+    }
+
+    return this.normalizeWebhookEventValue(rawEvent);
   }
 
   async handleWebhook(headers: Record<string, string>, payload: any) {
@@ -404,9 +554,7 @@ export class AiqfomeService {
         return;
       }
 
-      const event = String(
-        payload?.event || payload?.type || payload?.event_type || payload?.data?.event || '',
-      );
+      const event = this.extractWebhookEventName(payload);
       const storeId = String(
         payload?.store_id ||
           payload?.storeId ||
