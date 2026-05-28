@@ -82,6 +82,9 @@ export class UserService {
     const ifoodMerchantId = useIfoodIntegration
       ? (data.ifoodMerchantId?.trim() ?? ifoodMerchants[0]?.merchantId ?? '')
       : '';
+    const useAiqfomeIntegration = Boolean(data.useAiqfomeIntegration);
+    const aiqfomeStores = useAiqfomeIntegration ? this.normalizeAiqfomeStores(data.aiqfomeStores) : [];
+    const aiqfomeStoreId = useAiqfomeIntegration ? String(data.aiqfomeStoreId || aiqfomeStores.find((s) => s.enabled)?.storeId || '').trim() : '';
 
     try {
       const newUser = await this.userRepository.save({
@@ -94,6 +97,9 @@ export class UserService {
         usesExternalIfoodPdv,
         ifoodMerchantId,
         ifoodMerchants,
+        useAiqfomeIntegration,
+        aiqfomeStores,
+        aiqfomeStoreId,
         ifoodClientId: '',
         ifoodClientSecret: '',
         ifoodOrdersReleased: Number(data.ifoodOrdersReleased || 0),
@@ -224,6 +230,13 @@ export class UserService {
       const ifoodMerchants = this.normalizeIfoodMerchants(
         data.ifoodMerchants ?? userToUpdate.ifoodMerchants,
       );
+      const useAiqfomeIntegration = data.useAiqfomeIntegration ?? userToUpdate.useAiqfomeIntegration ?? false;
+      const aiqfomeStores = useAiqfomeIntegration
+        ? this.normalizeAiqfomeStores(data.aiqfomeStores ?? userToUpdate.aiqfomeStores)
+        : [];
+      const aiqfomeStoreId = useAiqfomeIntegration
+        ? String(data.aiqfomeStoreId ?? userToUpdate.aiqfomeStoreId ?? aiqfomeStores.find((s) => s.enabled)?.storeId ?? '').trim()
+        : '';
 
       const changedUser = await this.userRepository.save({
         ...userToUpdate,
@@ -233,6 +246,9 @@ export class UserService {
         usesExternalIfoodPdv,
         ifoodMerchantId,
         ifoodMerchants,
+        useAiqfomeIntegration,
+        aiqfomeStores,
+        aiqfomeStoreId,
         ifoodClientId: '',
         ifoodClientSecret: '',
         ifoodOrdersReleased:
@@ -327,6 +343,19 @@ export class UserService {
         pickupAddress: String(merchant?.pickupAddress || '').trim() || undefined,
       }))
       .filter((merchant) => merchant.merchantId);
+  }
+
+
+  private normalizeAiqfomeStores(stores: any): Array<any> {
+    if (!Array.isArray(stores)) return [];
+    return stores
+      .map((store) => ({
+        storeId: String(store?.storeId || '').trim(),
+        name: String(store?.name || '').trim(),
+        enabled: store?.enabled !== false,
+        pickupAddress: String(store?.pickupAddress || '').trim() || undefined,
+      }))
+      .filter((store) => store.storeId);
   }
 
   private getActiveMerchantIds(company: UserEntity): string[] {

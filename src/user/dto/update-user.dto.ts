@@ -18,6 +18,12 @@ export class UpdateUserDto {
   @ValidateNested({ each: true })
   @Type(() => IfoodMerchantDto)
   ifoodMerchants?: IfoodMerchantDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AiqfomeStoreDto)
+  aiqfomeStores?: AiqfomeStoreDto[];
   @IsString()
   @IsOptional()
   name: string;
@@ -70,6 +76,14 @@ export class UpdateUserDto {
   @IsString()
   @IsOptional()
   ifoodMerchantId?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  useAiqfomeIntegration?: boolean;
+
+  @IsString()
+  @IsOptional()
+  aiqfomeStoreId?: string;
   
   @IsString()
   @IsOptional()
@@ -95,6 +109,19 @@ export class UpdateUserDto {
 class IfoodMerchantDto {
   @IsString()
   merchantId: string;
+  @IsString()
+  name: string;
+  @IsBoolean()
+  enabled: boolean;
+  @IsOptional()
+  @IsString()
+  pickupAddress?: string;
+}
+
+
+class AiqfomeStoreDto {
+  @IsString()
+  storeId: string;
   @IsString()
   name: string;
   @IsBoolean()

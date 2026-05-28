@@ -4,4 +4,6 @@ export * from './log.entity';
 export * from './city.entity';
 export * from './ifood-order-link.entity';
 export * from './ifood-event.entity';
-export * from './ifood-credit-history.entity';export * from './aiqfome-integration.entity';
+export * from './ifood-credit-history.entity';
+export * from './aiqfome-integration.entity';
+export * from './aiqfome-order-link.entity';
