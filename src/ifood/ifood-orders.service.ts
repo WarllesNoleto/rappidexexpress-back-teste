@@ -541,7 +541,12 @@ export class IfoodOrdersService {
     );
     const displayId = order?.displayId ?? orderId;
     const localizer = order?.customer?.phone?.localizer ?? null;
-    const deliveryValue = this.resolveIfoodDeliveryValue(order);
+
+    const totalValue =
+      order?.total?.orderAmount ??
+      order?.total?.subTotal ??
+      order?.payments?.prepaid ??
+      0;
 
     const fullAddressData = this.buildIfoodFullAddress(order);
     const deliveryLocationLink =
@@ -550,9 +555,6 @@ export class IfoodOrdersService {
 
     this.logger.log(
       `ifood_address_import orderId=${orderId} displayId=${displayId} complete=${Boolean(fullAddressData.fullAddress && fullAddressData.clientAddress)}`,
-    );
-    this.logger.log(
-      `ifood_value_resolved orderId=${orderId} displayId=${displayId} orderAmount=${order?.total?.orderAmount ?? null} prepaid=${order?.payments?.prepaid ?? null} pending=${order?.payments?.pending ?? null} value=${deliveryValue}`,
     );
 
     const observation = [
@@ -588,21 +590,11 @@ export class IfoodOrdersService {
       addressMapsUrl: fullAddressData.addressMapsUrl ?? undefined,
       status: StatusDelivery.AWAITING_RELEASE,
       establishmentId,
-      value: deliveryValue,
+      value: String(totalValue),
       payment: this.resolvePaymentType(order),
       soda: 'NÃO',
       observation,
     };
-  }
-
-  private resolveIfoodDeliveryValue(order: any): string {
-    const pending = Number(order?.payments?.pending);
-
-    if (Number.isFinite(pending) && pending > 0) {
-      return pending.toFixed(2);
-    }
-
-    return '0.00';
   }
 
   private buildIfoodFullAddress(order: any) {

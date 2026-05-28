@@ -5,6 +5,17 @@ import { IfoodPollingService } from './ifood-polling.service';
 
 @Injectable()
 export class IfoodReadinessService {
+  private static readonly ELIGIBLE_IMPORT_CODES = new Set([
+    'CFM',
+    'CONFIRMED',
+    'PLC',
+    'PLACED',
+    'DSP',
+    'DISPATCHED',
+    'RTP',
+    'READY_TO_PICKUP',
+  ]);
+
   constructor(
     private readonly ifoodOrdersService: IfoodOrdersService,
     private readonly ifoodPollingService: IfoodPollingService,
@@ -59,15 +70,14 @@ export class IfoodReadinessService {
       (event) => event?.code === 'CON' || event?.fullCode === 'CONCLUDED',
     );
 
-    const hasEligibleImportEvent = filteredEvents.some(
-      (event) =>
-        ['CFM', 'CONFIRMED', 'PLC', 'PLACED', 'DSP', 'DISPATCHED', 'RTP', 'READY_TO_PICKUP'].includes(
-          String(event?.code || '').toUpperCase(),
-        ) ||
-        ['CFM', 'CONFIRMED', 'PLC', 'PLACED', 'DSP', 'DISPATCHED', 'RTP', 'READY_TO_PICKUP'].includes(
-          String(event?.fullCode || '').toUpperCase(),
-        ),
-    );
+    const hasEligibleImportEvent = filteredEvents.some((event) => {
+      const code = String(event?.code || '').toUpperCase();
+      const fullCode = String(event?.fullCode || '').toUpperCase();
+      return (
+        IfoodReadinessService.ELIGIBLE_IMPORT_CODES.has(code) ||
+        IfoodReadinessService.ELIGIBLE_IMPORT_CODES.has(fullCode)
+      );
+    });
 
     const latestEvent =
       filteredEvents.length > 0

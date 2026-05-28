@@ -35,12 +35,14 @@ export class IfoodEventService {
       where: {
         $or: [
           { code: 'CFM' },
-          { fullCode: 'CONFIRMED' },
+          { code: 'CONFIRMED' },
           { code: 'PLC' },
-          { fullCode: 'PLACED' },
+          { code: 'PLACED' },
           { code: 'DSP' },
-          { fullCode: 'DISPATCHED' },
           { code: 'RTP' },
+          { fullCode: 'CONFIRMED' },
+          { fullCode: 'PLACED' },
+          { fullCode: 'DISPATCHED' },
           { fullCode: 'READY_TO_PICKUP' },
         ],
       } as any,
