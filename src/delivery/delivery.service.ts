@@ -31,7 +31,6 @@ import { IfoodCreditsService } from '../ifood/ifood-credits.service';
 import { IfoodEventService } from '../ifood/ifood-event.service';
 import { sendNotificationsFor } from 'src/shared/utils/notification.functions';
 import { OrdersGateway } from '../gateway/orders.gateway';
-import { AiqfomeService } from '../aiqfome/aiqfome.service';
 
 @Injectable()
 export class DeliveryService implements OnModuleInit {
@@ -54,8 +53,6 @@ export class DeliveryService implements OnModuleInit {
     private readonly ifoodCreditsService: IfoodCreditsService,
     @Inject(forwardRef(() => IfoodEventService))
     private readonly ifoodEventService: IfoodEventService,
-    @Inject(forwardRef(() => AiqfomeService))
-    private readonly aiqfomeService: AiqfomeService,
   ) {}
 
   private async syncIfoodOnCourseIfNeeded(
@@ -477,6 +474,17 @@ export class DeliveryService implements OnModuleInit {
           { isActive: 1, 'motoboy.id': 1, status: 1, createdAt: -1 },
           { name: 'IDX_DELIVERIES_ACTIVE_MOTOBOY_STATUS_CREATED_AT' },
         ),
+        this.deliveryRepository.createCollectionIndex(
+          { ifoodOrderId: 1, ifoodMerchantId: 1 },
+          {
+            name: 'IDX_DELIVERIES_IFOOD_ORDER_MERCHANT_UNIQUE',
+            unique: true,
+            partialFilterExpression: {
+              ifoodOrderId: { $type: 'string' },
+              ifoodMerchantId: { $type: 'string' },
+            },
+          },
+        ),
       ]);
     } catch (error: any) {
       this.logger.warn(
@@ -505,20 +513,6 @@ export class DeliveryService implements OnModuleInit {
         error?.stack || error,
       );
     });
-  }
-
-
-  private syncAiqfomeInBackground(
-    previousDelivery: DeliveryEntity,
-    nextDelivery: DeliveryEntity,
-  ) {
-    void this.aiqfomeService
-      .syncStatusFromDelivery(previousDelivery, nextDelivery)
-      .catch((error: any) => {
-        this.logger.warn(
-          `Falha assíncrona ao sincronizar delivery ${previousDelivery.id} com aiqfome. ${error?.message || error}`,
-        );
-      });
   }
 
   private async refundCreditForCanceledDelivery(
@@ -961,7 +955,6 @@ export class DeliveryService implements OnModuleInit {
       }
 
       await this.saveIfoodSyncFlags(deliveryUpdated.id, ifoodSyncFlags);
-      this.syncAiqfomeInBackground(deliveryFinded, deliveryUpdated);
       deliveryUpdated = {
         ...deliveryUpdated,
         ...ifoodSyncFlags,
@@ -994,14 +987,11 @@ export class DeliveryService implements OnModuleInit {
       }
 
       try {
-        deliveryUpdated = await this.persistDeliveryUpdate(
-          deliveryFinded.id,
-          {
-            ...changedDelivery,
-            ...ifoodSyncFlags,
-            updatedAt: addHours(new Date(), -3),
-          },
-        );
+        deliveryUpdated = await this.persistDeliveryUpdate(deliveryFinded.id, {
+          ...changedDelivery,
+          ...ifoodSyncFlags,
+          updatedAt: addHours(new Date(), -3),
+        });
       } catch (error: any) {
         this.logger.error(
           `Falha ao salvar entrega ${deliveryFinded.id} no updateDelivery. status=${error?.response?.status || error?.status || 'N/A'} message=${error?.response?.data?.message || error?.message || error}`,
@@ -1019,8 +1009,6 @@ export class DeliveryService implements OnModuleInit {
           deliveryData,
         );
       }
-
-      this.syncAiqfomeInBackground(deliveryFinded, deliveryUpdated);
     }
 
     this.ordersGateway.emitDeliveryUpdated(
@@ -1094,7 +1082,9 @@ export class DeliveryService implements OnModuleInit {
       (key) => (data as any)[key] !== undefined,
     );
 
-    return payloadKeys.length > 0 && payloadKeys.every((key) => allowedKeys.has(key));
+    return (
+      payloadKeys.length > 0 && payloadKeys.every((key) => allowedKeys.has(key))
+    );
   }
 
   async createDelivery(
@@ -1125,6 +1115,10 @@ export class DeliveryService implements OnModuleInit {
       addressLatitude,
       addressLongitude,
       addressMapsUrl,
+      ifoodOrderId,
+      ifoodDisplayId,
+      ifoodMerchantId,
+      ifoodMerchantName,
     } = deliveryData;
 
     let deliveryStatus = status;
@@ -1202,6 +1196,11 @@ export class DeliveryService implements OnModuleInit {
         addressLatitude,
         addressLongitude,
         addressMapsUrl,
+        ifoodOrderId,
+        ifoodDisplayId,
+        ifoodMerchantId,
+        ifoodMerchantName,
+        ifoodImportedAt: ifoodOrderId ? addHours(new Date(), -3) : undefined,
         isActive: true,
         createdBy: user.id,
         onCoursedAt,
@@ -1637,10 +1636,6 @@ export class DeliveryService implements OnModuleInit {
       }
     }
 
-    if (delivery.status !== updated.status) {
-      this.syncAiqfomeInBackground(delivery, updated);
-    }
-
     this.ordersGateway.emitDeliveryUpdated(
       DeliveryResult.fromEntity(updated),
       updated.establishment?.cityId,
@@ -1672,8 +1667,6 @@ export class DeliveryService implements OnModuleInit {
         updatedAt: addHours(new Date(), -3),
       }),
     );
-
-    this.syncAiqfomeInBackground(delivery, updated);
 
     this.ordersGateway.emitDeliveryUpdated(
       DeliveryResult.fromEntity(updated),
@@ -1708,7 +1701,6 @@ export class DeliveryService implements OnModuleInit {
       (!deliveryData.status || deliveryData.status === StatusDelivery.ONCOURSE)
     );
   }
-
 
   private async persistDeliveryUpdate(
     deliveryId: string,

@@ -13,9 +13,7 @@ import { IfoodImportService } from './ifood-import.service';
 import { IfoodPollingService } from './ifood-polling.service';
 
 @Injectable()
-export class IfoodAutoPollingService
-  implements OnModuleInit, OnModuleDestroy
-{
+export class IfoodAutoPollingService implements OnModuleInit, OnModuleDestroy {
   private static readonly DEFAULT_INTERVAL_MS = 30000;
   private static readonly MAX_PRODUCTION_INTERVAL_MS = 30000;
   private static readonly POLLING_INTERVAL_TOLERANCE_MS = 2000;
@@ -24,6 +22,7 @@ export class IfoodAutoPollingService
   private readonly logger = new Logger(IfoodAutoPollingService.name);
   private intervalRef: NodeJS.Timeout | null = null;
   private lastCycleStartedAt: number | null = null;
+  private isPollingCycleRunning = false;
   private metrics = {
     eventsReceived: 0,
     eventsAcked: 0,
@@ -72,6 +71,14 @@ export class IfoodAutoPollingService
   }
 
   private async runPollingCycle() {
+    if (this.isPollingCycleRunning) {
+      this.logger.log(
+        'Ciclo de polling iFood ignorado porque o ciclo anterior ainda está em execução.',
+      );
+      return;
+    }
+
+    this.isPollingCycleRunning = true;
     const cycleStartedAt = Date.now();
 
     if (this.lastCycleStartedAt) {
@@ -110,10 +117,7 @@ export class IfoodAutoPollingService
         `Polling executado com sucesso. Eventos encontrados: ${allEvents.length}`,
       );
 
-      if (
-        metadata?.maxMerchantsPerBatch >
-        100
-      ) {
+      if (metadata?.maxMerchantsPerBatch > 100) {
         this.logger.error(
           `ALERTA: lote com merchants acima do limite por request (${metadata.maxMerchantsPerBatch} > 100).`,
         );
@@ -149,7 +153,8 @@ export class IfoodAutoPollingService
         `Eventos pendentes de ACK neste ciclo: ${pendingAckEvents.length}`,
       );
       const eligibleEvents = freshEvents.filter(
-        (event) => this.ifoodImportService.isEligibleImportEvent(event),
+        (event) =>
+          this.ifoodImportService.isEligibleImportEvent?.(event) === true,
       );
 
       if (polledAckTargets.length > 0) {
@@ -186,9 +191,7 @@ export class IfoodAutoPollingService
       );
 
       const cancellationEvents = freshEvents.filter(
-        (event) =>
-          event?.code === 'CAN' ||
-          event?.fullCode === 'CANCELLED',
+        (event) => event?.code === 'CAN' || event?.fullCode === 'CANCELLED',
       );
       const cancellationRequestFailedEvents = freshEvents.filter(
         (event) =>
@@ -197,8 +200,7 @@ export class IfoodAutoPollingService
       );
 
       const conclusionEvents = freshEvents.filter(
-        (event) =>
-          event?.code === 'CON' || event?.fullCode === 'CONCLUDED',
+        (event) => event?.code === 'CON' || event?.fullCode === 'CONCLUDED',
       );
 
       const dropCodeRequestedEvents = freshEvents.filter(
@@ -252,7 +254,9 @@ export class IfoodAutoPollingService
           await this.ifoodEventService.markAsProcessed(event, true);
         }
       }
-      await this.ifoodImportService.retryPendingImportsForActiveMerchants(150);
+      await this.ifoodImportService.retryPendingImportsForActiveMerchants?.(
+        150,
+      );
 
       const uniqueMerchants = Array.from(
         new Set(
@@ -271,6 +275,8 @@ export class IfoodAutoPollingService
       this.logger.error(
         `Erro no polling automático do iFood: ${error?.message || error}`,
       );
+    } finally {
+      this.isPollingCycleRunning = false;
     }
   }
 
@@ -279,10 +285,13 @@ export class IfoodAutoPollingService
       this.configService.get('IFOOD_POLLING_INTERVAL_MS') ??
         IfoodAutoPollingService.DEFAULT_INTERVAL_MS,
     );
-    const intervalMs = Number.isFinite(rawInterval) && rawInterval > 0
-      ? rawInterval
-      : IfoodAutoPollingService.DEFAULT_INTERVAL_MS;
-    const nodeEnv = String(this.configService.get('NODE_ENV') ?? '').toLowerCase();
+    const intervalMs =
+      Number.isFinite(rawInterval) && rawInterval > 0
+        ? rawInterval
+        : IfoodAutoPollingService.DEFAULT_INTERVAL_MS;
+    const nodeEnv = String(
+      this.configService.get('NODE_ENV') ?? '',
+    ).toLowerCase();
     const isProduction = nodeEnv === 'production';
 
     if (

@@ -9,13 +9,6 @@ export type IfoodMerchantConfig = {
   pickupAddress?: string;
 };
 
-export type AiqfomeStoreConfig = {
-  storeId: string;
-  name: string;
-  enabled: boolean;
-  pickupAddress?: string;
-};
-
 @Entity()
 export class UserEntity {
   @ObjectIdColumn()
@@ -82,15 +75,6 @@ export class UserEntity {
 
   @Column({ nullable: true })
   ifoodMerchants?: IfoodMerchantConfig[];
-
-  @Column({ default: false })
-  useAiqfomeIntegration: boolean;
-
-  @Column({ nullable: true })
-  aiqfomeStoreId?: string;
-
-  @Column({ nullable: true })
-  aiqfomeStores?: AiqfomeStoreConfig[];
 
   @Column({ nullable: true })
   ifoodClientId?: string;

@@ -82,14 +82,6 @@ export class UserService {
     const ifoodMerchantId = useIfoodIntegration
       ? (data.ifoodMerchantId?.trim() ?? ifoodMerchants[0]?.merchantId ?? '')
       : '';
-    const useAiqfomeIntegration = Boolean(data.useAiqfomeIntegration);
-    const initialAiqfomeStores = this.normalizeAiqfomeStores(data.aiqfomeStores);
-    const aiqfomeStoreId = useAiqfomeIntegration
-      ? String(data.aiqfomeStoreId || initialAiqfomeStores.find((s) => s.enabled)?.storeId || '').trim()
-      : '';
-    const aiqfomeStores = useAiqfomeIntegration
-      ? this.buildSingleAiqfomeStore(aiqfomeStoreId, data.name, initialAiqfomeStores)
-      : [];
 
     try {
       const newUser = await this.userRepository.save({
@@ -102,9 +94,6 @@ export class UserService {
         usesExternalIfoodPdv,
         ifoodMerchantId,
         ifoodMerchants,
-        useAiqfomeIntegration,
-        aiqfomeStores,
-        aiqfomeStoreId,
         ifoodClientId: '',
         ifoodClientSecret: '',
         ifoodOrdersReleased: Number(data.ifoodOrdersReleased || 0),
@@ -235,16 +224,6 @@ export class UserService {
       const ifoodMerchants = this.normalizeIfoodMerchants(
         data.ifoodMerchants ?? userToUpdate.ifoodMerchants,
       );
-      const useAiqfomeIntegration = data.useAiqfomeIntegration ?? userToUpdate.useAiqfomeIntegration ?? false;
-      const initialAiqfomeStores = this.normalizeAiqfomeStores(
-        data.aiqfomeStores ?? userToUpdate.aiqfomeStores,
-      );
-      const aiqfomeStoreId = useAiqfomeIntegration
-        ? String(data.aiqfomeStoreId ?? userToUpdate.aiqfomeStoreId ?? initialAiqfomeStores.find((s) => s.enabled)?.storeId ?? '').trim()
-        : '';
-      const aiqfomeStores = useAiqfomeIntegration
-        ? this.buildSingleAiqfomeStore(aiqfomeStoreId, userToUpdate.name, initialAiqfomeStores)
-        : [];
 
       const changedUser = await this.userRepository.save({
         ...userToUpdate,
@@ -254,9 +233,6 @@ export class UserService {
         usesExternalIfoodPdv,
         ifoodMerchantId,
         ifoodMerchants,
-        useAiqfomeIntegration,
-        aiqfomeStores,
-        aiqfomeStoreId,
         ifoodClientId: '',
         ifoodClientSecret: '',
         ifoodOrdersReleased:
@@ -351,42 +327,6 @@ export class UserService {
         pickupAddress: String(merchant?.pickupAddress || '').trim() || undefined,
       }))
       .filter((merchant) => merchant.merchantId);
-  }
-
-
-  private normalizeAiqfomeStores(stores: any): Array<any> {
-    if (!Array.isArray(stores)) return [];
-    return stores
-      .map((store) => ({
-        storeId: String(store?.storeId || '').trim(),
-        name: String(store?.name || '').trim(),
-        enabled: store?.enabled !== false,
-        pickupAddress: String(store?.pickupAddress || '').trim() || undefined,
-      }))
-      .filter((store) => store.storeId);
-  }
-
-  private buildSingleAiqfomeStore(
-    storeId: string,
-    userName?: string,
-    existingStores: Array<any> = [],
-  ): Array<any> {
-    const normalizedStoreId = String(storeId || '').trim();
-    if (!normalizedStoreId) {
-      return [];
-    }
-
-    const existingStore = existingStores.find(
-      (store) => String(store?.storeId || '').trim() === normalizedStoreId,
-    );
-
-    return [
-      {
-        storeId: normalizedStoreId,
-        name: String(userName || existingStore?.name || 'Loja aiqfome').trim(),
-        enabled: true,
-      },
-    ];
   }
 
   private getActiveMerchantIds(company: UserEntity): string[] {

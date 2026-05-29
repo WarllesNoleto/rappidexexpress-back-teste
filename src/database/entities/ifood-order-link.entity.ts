@@ -2,7 +2,11 @@ import { Column, Entity, Index, ObjectIdColumn } from 'typeorm';
 import { ObjectId } from 'mongodb';
 
 @Entity()
-@Index(['ifoodOrderId', 'merchantId'], { unique: true })
+@Index(
+  'IDX_IFOOD_ORDER_LINK_ORDER_MERCHANT_UNIQUE',
+  ['ifoodOrderId', 'merchantId'],
+  { unique: true },
+)
 export class IfoodOrderLinkEntity {
   @ObjectIdColumn()
   internalId: ObjectId;

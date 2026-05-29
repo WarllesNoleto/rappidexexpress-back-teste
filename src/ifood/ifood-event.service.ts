@@ -36,12 +36,9 @@ export class IfoodEventService {
         $or: [
           { code: 'CFM' },
           { code: 'CONFIRMED' },
-          { code: 'PLC' },
-          { code: 'PLACED' },
           { code: 'DSP' },
           { code: 'RTP' },
           { fullCode: 'CONFIRMED' },
-          { fullCode: 'PLACED' },
           { fullCode: 'DISPATCHED' },
           { fullCode: 'READY_TO_PICKUP' },
         ],
@@ -79,14 +76,11 @@ export class IfoodEventService {
   }
 
   async markAsAcknowledged(eventId: string) {
-    await this.ifoodEventRepository.updateOne(
-      { eventId },
-      {
-        $set: {
-          acknowledged: true,
-        },
-      } as any,
-    );
+    await this.ifoodEventRepository.updateOne({ eventId }, {
+      $set: {
+        acknowledged: true,
+      },
+    } as any);
   }
 
   async findUnacknowledgedEventIds(limit = 500) {

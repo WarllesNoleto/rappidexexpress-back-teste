@@ -8,11 +8,10 @@ import { IfoodReadinessService } from './ifood-readiness.service';
 @Injectable()
 export class IfoodImportService {
   private readonly logger = new Logger(IfoodImportService.name);
+  private readonly importingOrderIds = new Set<string>();
   private static readonly IFOOD_IMPORT_EVENT_CODES = new Set([
     'CFM',
     'CONFIRMED',
-    'PLC',
-    'PLACED',
     'DSP',
     'DISPATCHED',
     'RTP',
@@ -35,11 +34,13 @@ export class IfoodImportService {
       return;
     }
 
-    const eligibleEvents = events.filter((event) => this.isEligibleImportEvent(event));
+    const eligibleEvents = events.filter((event) =>
+      this.isEligibleImportEvent(event),
+    );
 
     if (eligibleEvents.length === 0) {
       this.logger.log(
-        'Importação automática: nenhum evento elegível encontrado. Códigos monitorados: RTP, DSP',
+        'Importação automática: nenhum evento elegível encontrado. Códigos monitorados: CFM, CONFIRMED, DSP, DISPATCHED, RTP, READY_TO_PICKUP',
       );
       return;
     }
@@ -55,14 +56,24 @@ export class IfoodImportService {
     for (const eventReference of uniqueOrders) {
       const orderId = eventReference?.orderId;
       const merchantId = eventReference?.merchantId ?? null;
-      try {
-        const existingLink = await this.ifoodOrderLinkService.findByIfoodOrderId(
-          orderId,
-          merchantId,
+
+      if (this.importingOrderIds.has(orderId)) {
+        this.logger.log(
+          `iFood: importação ignorada porque o pedido já está em processamento | merchantId=${merchantId ?? 'n/a'} orderId=${orderId}`,
         );
+        continue;
+      }
+
+      this.importingOrderIds.add(orderId);
+
+      try {
+        const existingLink =
+          await this.ifoodOrderLinkService.findByIfoodOrderId(orderId);
 
         if (existingLink) {
-          this.logger.log(`iFood: pedido ignorado porque já existe vínculo | merchantId=${merchantId ?? 'n/a'} orderId=${orderId}`);
+          this.logger.log(
+            `iFood: pedido ignorado porque já existe vínculo | merchantId=${existingLink.merchantId || merchantId || 'n/a'} orderId=${orderId}`,
+          );
           continue;
         }
 
@@ -86,9 +97,23 @@ export class IfoodImportService {
           orderId,
           merchantId,
         );
+        const realMerchantId = String(order?.merchant?.id || '').trim();
+        const existingRealMerchantLink =
+          await this.ifoodOrderLinkService.findByIfoodOrderId(
+            orderId,
+            realMerchantId || null,
+          );
+
+        if (existingRealMerchantLink) {
+          this.logger.log(
+            `iFood: pedido ignorado porque já existe vínculo após consulta de detalhes | merchantId=${realMerchantId || merchantId || 'n/a'} orderId=${orderId} deliveryId=${existingRealMerchantLink.deliveryId}`,
+          );
+          continue;
+        }
+
         const targetShopkeeperId: string | null =
           await this.ifoodOrdersService.resolveTargetShopkeeperId(
-            order?.merchant?.id,
+            realMerchantId,
           );
 
         if (!targetShopkeeperId) {
@@ -101,8 +126,13 @@ export class IfoodImportService {
         const deliveryDto =
           await this.ifoodOrdersService.buildCreateDeliveryDto(
             orderId,
-            merchantId,
+            realMerchantId || merchantId,
           );
+
+        deliveryDto.ifoodOrderId = orderId;
+        deliveryDto.ifoodDisplayId = order?.displayId ?? orderId;
+        deliveryDto.ifoodMerchantId = realMerchantId;
+        deliveryDto.ifoodMerchantName = order?.merchant?.name ?? '';
 
         const createdDelivery = await this.deliveryService.createDelivery(
           deliveryDto,
@@ -124,17 +154,21 @@ export class IfoodImportService {
         await this.ifoodOrderLinkService.createLink({
           ifoodOrderId: orderId,
           ifoodDisplayId: order?.displayId ?? orderId,
-          merchantId: order?.merchant?.id ?? '',
+          merchantId: realMerchantId,
           merchantName: order?.merchant?.name ?? '',
           deliveryId: createdDelivery.id,
           shopkeeperId: targetShopkeeperId,
         });
 
-        this.logger.log(`iFood: vínculo criado com sucesso | merchantId=${order?.merchant?.id ?? merchantId ?? 'n/a'} orderId=${orderId} displayId=${order?.displayId ?? ''}`);
+        this.logger.log(
+          `iFood: vínculo criado com sucesso | merchantId=${realMerchantId || merchantId || 'n/a'} orderId=${orderId} displayId=${order?.displayId ?? ''}`,
+        );
       } catch (error: any) {
         this.logger.error(
           `iFood: erro ao buscar detalhes do pedido | merchantId=${merchantId ?? 'n/a'} orderId=${orderId} code=${eventReference?.code ?? ''} fullCode=${eventReference?.fullCode ?? ''} erro=${error?.message || error}`,
         );
+      } finally {
+        this.importingOrderIds.delete(orderId);
       }
     }
   }

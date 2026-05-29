@@ -15,7 +15,6 @@ export class CreateDeliveryDto {
   @IsOptional()
   clientLocation?: string;
 
-
   @IsString()
   @IsOptional()
   clientAddress?: string;
@@ -78,4 +77,20 @@ export class CreateDeliveryDto {
 
   @IsEnum(PaymentType)
   payment: PaymentType;
+
+  @IsString()
+  @IsOptional()
+  ifoodOrderId?: string;
+
+  @IsString()
+  @IsOptional()
+  ifoodDisplayId?: string;
+
+  @IsString()
+  @IsOptional()
+  ifoodMerchantId?: string;
+
+  @IsString()
+  @IsOptional()
+  ifoodMerchantName?: string;
 }

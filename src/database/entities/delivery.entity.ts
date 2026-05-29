@@ -7,6 +7,10 @@ import {
 import { UserEntity } from './user.entity';
 
 @Entity()
+@Index(['ifoodOrderId', 'ifoodMerchantId'], {
+  unique: true,
+  sparse: true,
+})
 export class DeliveryEntity {
   @ObjectIdColumn()
   internalId: ObjectId;
@@ -23,7 +27,6 @@ export class DeliveryEntity {
 
   @Column({ nullable: true })
   clientLocation?: string;
-
 
   @Column({ nullable: true })
   clientAddress?: string;
@@ -111,6 +114,19 @@ export class DeliveryEntity {
 
   @Column({ nullable: true })
   logisticsStatus?: string;
+
+  @Column({ nullable: true })
+  ifoodOrderId?: string;
+
+  @Column({ nullable: true })
+  ifoodDisplayId?: string;
+
+  @Column({ nullable: true })
+  ifoodMerchantId?: string;
+
+  @Column({ nullable: true })
+  ifoodMerchantName?: string;
+
   @Column({ nullable: true })
   ifoodImportedAt?: Date;
   @Column({ nullable: true })
