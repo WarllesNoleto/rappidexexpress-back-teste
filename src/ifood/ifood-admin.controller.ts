@@ -265,9 +265,16 @@ export class IfoodAdminController {
       user,
       body.reason,
     );
-    
+
     if (summary.useIfoodIntegration) {
-      await this.ifoodImportService.retryPendingImportsForCompany(companyId);
+      this.ifoodImportService
+        .retryPendingImportsForCompany(companyId)
+        .catch((error) => {
+          console.error(
+            `Erro ao reprocessar pedidos iFood após adicionar créditos. companyId=${companyId}`,
+            error?.message || error,
+          );
+        });
     }
 
     return summary;
