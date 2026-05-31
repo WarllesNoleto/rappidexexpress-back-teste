@@ -32,6 +32,12 @@ const ANOTA_AI_SHORT_ID_KEYS = [
 ];
 
 const ANOTA_AI_STORE_ID_KEYS = [
+  // "Root" no Portal de Integração da Anota AI é o identificador interno
+  // da loja/estabelecimento, não uma URL base do backend.
+  'root',
+  'Root',
+  'rootId',
+  'root_id',
   'storeId',
   'store_id',
   'merchantId',
