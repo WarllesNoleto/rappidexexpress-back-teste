@@ -14,17 +14,6 @@ const ACCEPTED_STATUS_VALUES = new Set([
   'confirmed',
 ]);
 
-const ANOTA_AI_ORDER_ID_KEYS = [
-  '_id',
-  'id',
-  'orderId',
-  'order_id',
-  'externalId',
-  'external_id',
-  'pedidoId',
-  'pedido_id',
-];
-
 const ANOTA_AI_SHORT_ID_KEYS = [
   'shortId',
   'short_id',
@@ -61,10 +50,20 @@ const ANOTA_AI_EXTERNAL_RESTAURANT_ID_PATHS = [
   'restaurant_external_id',
   'idExternoRestaurante',
   'id_externo_restaurante',
+  'companyExternalId',
+  'company_external_id',
   'restaurant.externalId',
+  'restaurant.external_id',
   'store.externalId',
-  'establishment.externalId',
+  'store.external_id',
   'merchant.externalId',
+  'merchant.external_id',
+  'establishment.externalId',
+  'establishment.external_id',
+  'deliveryPoint.externalId',
+  'deliveryPoint.external_id',
+  'root.externalId',
+  'root.external_id',
   'externalRestaurant',
   'restaurantIdExternal',
 ];
@@ -180,10 +179,83 @@ export function isAcceptedAnotaAiOrder(payload: any): boolean {
   return ACCEPTED_STATUS_VALUES.has(normalizeStatus(status));
 }
 
-export function getAnotaAiOrderId(payload: any): string | undefined {
-  const value = firstValueFromKeys(payload, ANOTA_AI_ORDER_ID_KEYS);
+function hasAnotaAiOrderShape(payload: any): boolean {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+
+  return [
+    'status',
+    'customer',
+    'deliveryAddress',
+    'payment',
+    'totals',
+    'items',
+  ].some((key) => payload[key] !== undefined && payload[key] !== null);
+}
+
+function normalizeAnotaAiOrderId(value: any): string | undefined {
   const normalized = normalizeText(value);
   return normalized || undefined;
+}
+
+export function getAnotaAiOrderId(payload: any): string | undefined {
+  const orderId =
+    normalizeAnotaAiOrderId(payload?.order?._id) ||
+    normalizeAnotaAiOrderId(payload?.order?.id) ||
+    normalizeAnotaAiOrderId(payload?.order?.orderId);
+
+  if (orderId) {
+    console.log('[ANOTA AI] ID do pedido extraído do objeto order');
+    return orderId;
+  }
+
+  const dataId =
+    normalizeAnotaAiOrderId(payload?.data?._id) ||
+    normalizeAnotaAiOrderId(payload?.data?.id) ||
+    normalizeAnotaAiOrderId(payload?.data?.orderId);
+
+  if (dataId) {
+    console.log('[ANOTA AI] ID do pedido extraído do objeto data');
+    return dataId;
+  }
+
+  const nestedPayloadId =
+    normalizeAnotaAiOrderId(payload?.payload?._id) ||
+    normalizeAnotaAiOrderId(payload?.payload?.id);
+
+  if (nestedPayloadId) {
+    console.log('[ANOTA AI] ID do pedido extraído da raiz do payload');
+    return nestedPayloadId;
+  }
+
+  const resourceId =
+    normalizeAnotaAiOrderId(payload?.resource?._id) ||
+    normalizeAnotaAiOrderId(payload?.resource?.id);
+
+  if (resourceId) {
+    console.log('[ANOTA AI] ID do pedido extraído da raiz do payload');
+    return resourceId;
+  }
+
+  const rootId =
+    normalizeAnotaAiOrderId(payload?._id) ||
+    normalizeAnotaAiOrderId(payload?.order_id) ||
+    normalizeAnotaAiOrderId(payload?.orderId);
+
+  if (rootId) {
+    console.log('[ANOTA AI] ID do pedido extraído da raiz do payload');
+    return rootId;
+  }
+
+  const rootGenericId = normalizeAnotaAiOrderId(payload?.id);
+  if (rootGenericId && hasAnotaAiOrderShape(payload)) {
+    console.log('[ANOTA AI] ID do pedido extraído da raiz do payload');
+    return rootGenericId;
+  }
+
+  console.warn('[ANOTA AI] ID do pedido não encontrado');
+  return undefined;
 }
 
 export function getAnotaAiShortId(payload: any): string | undefined {

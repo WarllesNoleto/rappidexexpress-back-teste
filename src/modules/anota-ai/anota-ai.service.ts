@@ -272,22 +272,34 @@ export class AnotaAiService {
       payload?.data,
       payload?.payload,
       payload?.resource,
+      payload?.result,
+      payload?.orderData,
+      payload?.orderDetails,
+      payload?.body,
+      payload,
     ];
 
-    for (const candidate of candidates) {
-      if (
-        candidate &&
-        typeof candidate === 'object' &&
-        (candidate._id ||
-          candidate.id ||
-          candidate.status ||
-          candidate.customer)
-      ) {
-        return candidate;
-      }
+    return (
+      candidates.find((candidate) => this.looksLikeOrderPayload(candidate)) ||
+      payload
+    );
+  }
+
+  private looksLikeOrderPayload(candidate: any) {
+    if (!candidate || typeof candidate !== 'object') {
+      return false;
     }
 
-    return payload;
+    return [
+      '_id',
+      'id',
+      'status',
+      'customer',
+      'deliveryAddress',
+      'payment',
+      'totals',
+      'items',
+    ].some((key) => candidate[key] !== undefined && candidate[key] !== null);
   }
 
   validateWebhookToken(headers?: Record<string, any>): boolean {
@@ -302,7 +314,7 @@ export class AnotaAiService {
     // Após confirmar o header correto enviado pela Anota AI, bloquear webhooks sem token válido.
     if (!receivedTokens.length) {
       this.logger.warn(
-        '[ANOTA AI] Token externo configurado, mas nenhum header conhecido de token foi recebido',
+        '[ANOTA AI] Token externo configurado, mas nenhum header conhecido de token foi recebido. Durante o primeiro teste real, o webhook sem token conhecido ainda será permitido para descobrir qual header a Anota AI usa. Depois da confirmação do header correto, webhooks sem token válido serão bloqueados.',
       );
       return true;
     }
