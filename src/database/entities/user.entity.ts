@@ -91,6 +91,24 @@ export class UserEntity {
   @Column({ default: 0 })
   ifoodOrdersAvailable: number;
 
+  @Column({ default: false })
+  anotaAiEnabled: boolean;
+
+  @Column({ nullable: true })
+  anotaAiStoreId?: string;
+
+  @Column({ nullable: true })
+  anotaAiClientId?: string;
+
+  @Column({ nullable: true })
+  anotaAiClientSecret?: string;
+
+  @Column({ nullable: true })
+  anotaAiToken?: string;
+
+  @Column({ default: true })
+  anotaAiIgnoreIfoodOrders: boolean;
+
   @Column()
   createdAt: Date;
 

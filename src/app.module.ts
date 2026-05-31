@@ -8,6 +8,7 @@ import { AuthenticatorModule } from './authenticator/authenticator.module';
 import { DeliveryModule } from './delivery/delivery.module';
 import { CityModule } from './city/city.module';
 import { IfoodModule } from './ifood/ifood.module';
+import { AnotaAiModule } from './modules/anota-ai/anota-ai.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { IfoodModule } from './ifood/ifood.module';
     DeliveryModule,
     CityModule,
     IfoodModule,
+    AnotaAiModule,
   ],
   controllers: [AppController],
   providers: [AppService],

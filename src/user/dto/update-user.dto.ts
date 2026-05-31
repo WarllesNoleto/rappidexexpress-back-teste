@@ -90,6 +90,30 @@ export class UpdateUserDto {
   @IsOptional()
   @IsNumber()
   ifoodOrdersAvailable?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  anotaAiEnabled?: boolean;
+
+  @IsString()
+  @IsOptional()
+  anotaAiStoreId?: string;
+
+  @IsString()
+  @IsOptional()
+  anotaAiClientId?: string;
+
+  @IsString()
+  @IsOptional()
+  anotaAiClientSecret?: string;
+
+  @IsString()
+  @IsOptional()
+  anotaAiToken?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  anotaAiIgnoreIfoodOrders?: boolean;
 }
 
 class IfoodMerchantDto {

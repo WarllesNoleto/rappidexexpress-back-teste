@@ -160,4 +160,22 @@ export class DeliveryEntity {
 
   @Column({ default: false })
   ifoodArrivedAtDestinationSynced?: boolean;
+
+  @Column({ nullable: true })
+  source?: string;
+
+  @Column({ nullable: true })
+  externalOrderId?: string;
+
+  @Column({ nullable: true })
+  anotaAiOrderId?: string;
+
+  @Column({ nullable: true })
+  anotaAiShortId?: string;
+
+  @Column({ nullable: true })
+  integrationOrigin?: string;
+
+  @Column({ nullable: true })
+  rawIntegrationPayload?: Record<string, any>;
 }

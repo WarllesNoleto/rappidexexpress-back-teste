@@ -99,6 +99,12 @@ export class UserService {
         ifoodOrdersReleased: Number(data.ifoodOrdersReleased || 0),
         ifoodOrdersUsed: Number(data.ifoodOrdersUsed || 0),
         ifoodOrdersAvailable: Number(data.ifoodOrdersAvailable || 0),
+        anotaAiEnabled: Boolean(data.anotaAiEnabled),
+        anotaAiStoreId: data.anotaAiEnabled ? String(data.anotaAiStoreId || '').trim() : '',
+        anotaAiClientId: String(data.anotaAiClientId || '').trim(),
+        anotaAiClientSecret: String(data.anotaAiClientSecret || '').trim(),
+        anotaAiToken: String(data.anotaAiToken || '').trim(),
+        anotaAiIgnoreIfoodOrders: data.anotaAiIgnoreIfoodOrders !== false,
         isActive: true,
         createdAt: addHours(new Date(), -3),
         updatedAt: addHours(new Date(), -3),
@@ -241,6 +247,13 @@ export class UserService {
           data.ifoodOrdersUsed ?? userToUpdate.ifoodOrdersUsed ?? 0,
         ifoodOrdersAvailable:
           data.ifoodOrdersAvailable ?? userToUpdate.ifoodOrdersAvailable ?? 0,
+        anotaAiEnabled: data.anotaAiEnabled ?? userToUpdate.anotaAiEnabled ?? false,
+        anotaAiStoreId: String(data.anotaAiStoreId ?? userToUpdate.anotaAiStoreId ?? '').trim(),
+        anotaAiClientId: String(data.anotaAiClientId ?? userToUpdate.anotaAiClientId ?? '').trim(),
+        anotaAiClientSecret: String(data.anotaAiClientSecret ?? userToUpdate.anotaAiClientSecret ?? '').trim(),
+        anotaAiToken: String(data.anotaAiToken ?? userToUpdate.anotaAiToken ?? '').trim(),
+        anotaAiIgnoreIfoodOrders:
+          data.anotaAiIgnoreIfoodOrders ?? userToUpdate.anotaAiIgnoreIfoodOrders ?? true,
         updatedAt: addHours(new Date(), -3),
       });
 

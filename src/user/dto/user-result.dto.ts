@@ -67,10 +67,27 @@ export class UserResult {
   @Expose()
   ifoodOrdersAvailable: number;
 
+  @Expose()
+  anotaAiEnabled: boolean;
+
+  @Expose()
+  anotaAiStoreId?: string;
+
+  @Expose()
+  anotaAiClientId?: string;
+
+  @Expose()
+  anotaAiToken?: string;
+
+  @Expose()
+  anotaAiIgnoreIfoodOrders: boolean;
+
   public static fromEntity(user: UserEntity) {
     return plainToClass<UserResult, UserResult>(UserResult, {
       ...user,
       usesExternalIfoodPdv: Boolean(user?.usesExternalIfoodPdv),
+      anotaAiEnabled: Boolean(user?.anotaAiEnabled),
+      anotaAiIgnoreIfoodOrders: user?.anotaAiIgnoreIfoodOrders !== false,
     } as UserResult, {
       excludeExtraneousValues: true,
     });
