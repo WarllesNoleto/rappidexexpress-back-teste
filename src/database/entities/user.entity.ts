@@ -109,6 +109,18 @@ export class UserEntity {
   @Column({ default: true })
   anotaAiIgnoreIfoodOrders: boolean;
 
+  @Column({ default: false })
+  saiposEnabled: boolean;
+
+  @Column({ nullable: true })
+  saiposStoreId?: string;
+
+  @Column({ nullable: true })
+  saiposMerchantId?: string;
+
+  @Column({ nullable: true })
+  saiposToken?: string;
+
   @Column()
   createdAt: Date;
 

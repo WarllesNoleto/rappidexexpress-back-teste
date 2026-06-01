@@ -64,7 +64,7 @@ export class CreateUserDto {
   @IsString()
   @IsOptional()
   ifoodMerchantId?: string;
-  
+
   @IsString()
   @IsOptional()
   ifoodClientId?: string;
@@ -108,6 +108,22 @@ export class CreateUserDto {
   @IsBoolean()
   @IsOptional()
   anotaAiIgnoreIfoodOrders?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  saiposEnabled?: boolean;
+
+  @IsString()
+  @IsOptional()
+  saiposStoreId?: string;
+
+  @IsString()
+  @IsOptional()
+  saiposMerchantId?: string;
+
+  @IsString()
+  @IsOptional()
+  saiposToken?: string;
 }
 
 class IfoodMerchantDto {

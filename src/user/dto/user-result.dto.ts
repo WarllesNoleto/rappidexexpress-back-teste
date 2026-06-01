@@ -5,7 +5,7 @@ import {
 } from '../../shared/constants/enums.constants';
 import { UserEntity } from '../../database/entities/user.entity';
 
-function maskAnotaAiToken(token?: string): string {
+function maskIntegrationToken(token?: string): string {
   const normalizedToken = String(token || '').trim();
 
   if (!normalizedToken) {
@@ -96,6 +96,18 @@ export class UserResult {
   @Expose()
   anotaAiIgnoreIfoodOrders: boolean;
 
+  @Expose()
+  saiposEnabled: boolean;
+
+  @Expose()
+  saiposStoreId?: string;
+
+  @Expose()
+  saiposMerchantId?: string;
+
+  @Expose()
+  saiposToken?: string;
+
   public static fromEntity(user: UserEntity) {
     return plainToClass<UserResult, UserResult>(
       UserResult,
@@ -103,7 +115,9 @@ export class UserResult {
         ...user,
         usesExternalIfoodPdv: Boolean(user?.usesExternalIfoodPdv),
         anotaAiEnabled: Boolean(user?.anotaAiEnabled),
-        anotaAiToken: maskAnotaAiToken(user?.anotaAiToken),
+        anotaAiToken: maskIntegrationToken(user?.anotaAiToken),
+        saiposEnabled: Boolean(user?.saiposEnabled),
+        saiposToken: maskIntegrationToken(user?.saiposToken),
         anotaAiIgnoreIfoodOrders: user?.anotaAiIgnoreIfoodOrders !== false,
       } as UserResult,
       {

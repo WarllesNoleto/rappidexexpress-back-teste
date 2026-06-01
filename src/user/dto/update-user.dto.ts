@@ -58,7 +58,7 @@ export class UpdateUserDto {
   @IsMongoId()
   @IsOptional()
   cityId?: string;
-  
+
   @IsBoolean()
   @IsOptional()
   useIfoodIntegration?: boolean;
@@ -70,7 +70,7 @@ export class UpdateUserDto {
   @IsString()
   @IsOptional()
   ifoodMerchantId?: string;
-  
+
   @IsString()
   @IsOptional()
   ifoodClientId?: string;
@@ -114,6 +114,22 @@ export class UpdateUserDto {
   @IsBoolean()
   @IsOptional()
   anotaAiIgnoreIfoodOrders?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  saiposEnabled?: boolean;
+
+  @IsString()
+  @IsOptional()
+  saiposStoreId?: string;
+
+  @IsString()
+  @IsOptional()
+  saiposMerchantId?: string;
+
+  @IsString()
+  @IsOptional()
+  saiposToken?: string;
 }
 
 class IfoodMerchantDto {

@@ -107,6 +107,10 @@ export class UserService {
         anotaAiClientSecret: String(data.anotaAiClientSecret || '').trim(),
         anotaAiToken: this.normalizeAnotaAiToken(data.anotaAiToken),
         anotaAiIgnoreIfoodOrders: data.anotaAiIgnoreIfoodOrders !== false,
+        saiposEnabled: Boolean(data.saiposEnabled),
+        saiposStoreId: String(data.saiposStoreId || '').trim(),
+        saiposMerchantId: String(data.saiposMerchantId || '').trim(),
+        saiposToken: this.normalizeSaiposToken(data.saiposToken),
         isActive: true,
         createdAt: addHours(new Date(), -3),
         updatedAt: addHours(new Date(), -3),
@@ -272,6 +276,18 @@ export class UserService {
           data.anotaAiIgnoreIfoodOrders ??
           userToUpdate.anotaAiIgnoreIfoodOrders ??
           true,
+        saiposEnabled:
+          data.saiposEnabled ?? userToUpdate.saiposEnabled ?? false,
+        saiposStoreId: String(
+          data.saiposStoreId ?? userToUpdate.saiposStoreId ?? '',
+        ).trim(),
+        saiposMerchantId: String(
+          data.saiposMerchantId ?? userToUpdate.saiposMerchantId ?? '',
+        ).trim(),
+        saiposToken: this.resolveUpdatedSaiposToken(
+          data.saiposToken,
+          userToUpdate.saiposToken,
+        ),
         updatedAt: addHours(new Date(), -3),
       });
 
@@ -297,6 +313,32 @@ export class UserService {
     }
   }
 
+  private resolveUpdatedSaiposToken(
+    receivedToken: string | undefined,
+    currentToken: string | undefined,
+  ): string {
+    if (receivedToken === undefined) {
+      return this.normalizeSaiposToken(currentToken);
+    }
+
+    const normalizedReceivedToken = this.normalizeSaiposToken(receivedToken);
+    const normalizedCurrentToken = this.normalizeSaiposToken(currentToken);
+
+    if (
+      normalizedCurrentToken &&
+      normalizedReceivedToken ===
+        this.maskIntegrationToken(normalizedCurrentToken)
+    ) {
+      return normalizedCurrentToken;
+    }
+
+    return normalizedReceivedToken;
+  }
+
+  private normalizeSaiposToken(token?: string): string {
+    return String(token || '').trim();
+  }
+
   private resolveUpdatedAnotaAiToken(
     receivedToken: string | undefined,
     currentToken: string | undefined,
@@ -310,7 +352,8 @@ export class UserService {
 
     if (
       normalizedCurrentToken &&
-      normalizedReceivedToken === this.maskAnotaAiToken(normalizedCurrentToken)
+      normalizedReceivedToken ===
+        this.maskIntegrationToken(normalizedCurrentToken)
     ) {
       return normalizedCurrentToken;
     }
@@ -322,7 +365,7 @@ export class UserService {
     return String(token || '').trim();
   }
 
-  private maskAnotaAiToken(token?: string): string {
+  private maskIntegrationToken(token?: string): string {
     const normalizedToken = this.normalizeAnotaAiToken(token);
 
     if (!normalizedToken) {
