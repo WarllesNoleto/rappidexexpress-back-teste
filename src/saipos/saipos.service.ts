@@ -22,6 +22,44 @@ export class SaiposService {
     private readonly deliveryService: DeliveryService,
   ) {}
 
+  generateToken(payload: any = {}) {
+    const clientId = this.normalizeText(
+      payload?.client_id || payload?.clientId,
+    );
+    const grantType = this.normalizeText(
+      payload?.grant_type || payload?.grantType,
+    );
+
+    this.logger.log('[SAIPOS AUTH] solicitação de token recebida');
+    this.logger.log(`[SAIPOS AUTH] client_id=${clientId || 'não informado'}`);
+    this.logger.log(`[SAIPOS AUTH] grant_type=${grantType || 'não informado'}`);
+    this.logger.log('[SAIPOS AUTH] token gerado com sucesso');
+
+    return {
+      access_token: 'rappidex-saipos-homologacao-token',
+      token_type: 'Bearer',
+      expires_in: 3600,
+      scope: 'delivery',
+    };
+  }
+
+  looksLikeDelivery(rawPayload: any): boolean {
+    const payload = this.extractOrderPayload(rawPayload);
+
+    return Boolean(
+      this.extractOrderId(payload, rawPayload) ||
+      this.extractStoreId(payload, rawPayload) ||
+      this.extractMerchantId(payload, rawPayload) ||
+      payload?.deliveryAddress ||
+      payload?.delivery_address ||
+      payload?.enderecoEntrega ||
+      payload?.customer ||
+      payload?.cliente ||
+      payload?.items ||
+      payload?.itens,
+    );
+  }
+
   async processWebhook(
     rawPayload: any,
     headers?: Record<string, any>,
