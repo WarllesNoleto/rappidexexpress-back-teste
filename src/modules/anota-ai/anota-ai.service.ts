@@ -319,7 +319,10 @@ export class AnotaAiService {
       return true;
     }
 
-    const isValid = receivedTokens.some((token) => token === expectedToken);
+    const normalizedExpectedToken = this.normalizeWebhookToken(expectedToken);
+    const isValid = receivedTokens.some(
+      (token) => token === normalizedExpectedToken,
+    );
     if (!isValid) {
       this.logger.warn('[ANOTA AI] Token externo inválido');
     }
@@ -336,19 +339,15 @@ export class AnotaAiService {
 
   private pickWebhookHeaders(headers?: Record<string, any>) {
     const normalizedHeaders = this.normalizeHeaders(headers);
-    const mainHeaderNames = [
-      'x-token',
-      'x-webhook-token',
-      'authorization',
-      'token',
-      'content-type',
-      'user-agent',
-    ];
+    const tokenHeaderNames = this.getWebhookTokenHeaderNames();
+    const mainHeaderNames = [...tokenHeaderNames, 'content-type', 'user-agent'];
 
     return mainHeaderNames.reduce(
       (result, headerName) => {
         if (normalizedHeaders[headerName] !== undefined) {
-          result[headerName] = normalizedHeaders[headerName];
+          result[headerName] = tokenHeaderNames.includes(headerName)
+            ? this.maskTokenHeaderValue(normalizedHeaders[headerName])
+            : normalizedHeaders[headerName];
         }
 
         return result;
@@ -359,12 +358,47 @@ export class AnotaAiService {
 
   private getWebhookTokenCandidates(headers?: Record<string, any>) {
     const normalizedHeaders = this.normalizeHeaders(headers);
-    return ['x-token', 'x-webhook-token', 'authorization', 'token']
+    return this.getWebhookTokenHeaderNames()
       .map((headerName) => normalizedHeaders[headerName])
       .flatMap((value) => (Array.isArray(value) ? value : [value]))
-      .map((value) => String(value || '').trim())
-      .filter(Boolean)
-      .map((value) => value.replace(/^Bearer\s+/i, '').trim());
+      .map((value) => this.normalizeWebhookToken(value))
+      .filter(Boolean);
+  }
+
+  private getWebhookTokenHeaderNames() {
+    return [
+      'x-token',
+      'x-webhook-token',
+      'x-external-token',
+      'x-anota-token',
+      'x-anota-ai-token',
+      'authorization',
+      'token',
+    ];
+  }
+
+  private normalizeWebhookToken(value: any): string {
+    return String(value || '')
+      .trim()
+      .replace(/^(Bearer|Token)\s+/i, '')
+      .trim();
+  }
+
+  private maskTokenHeaderValue(value: any): any {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.maskTokenHeaderValue(item));
+    }
+
+    const normalizedToken = this.normalizeWebhookToken(value);
+    if (!normalizedToken) {
+      return '';
+    }
+
+    if (normalizedToken.length <= 8) {
+      return `${normalizedToken.slice(0, 2)}...${normalizedToken.slice(-2)}`;
+    }
+
+    return `${normalizedToken.slice(0, 4)}...${normalizedToken.slice(-4)}`;
   }
 
   private normalizeHeaders(headers?: Record<string, any>) {

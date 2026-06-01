@@ -79,14 +79,50 @@ const IFOOD_MARKER_KEYS = [
   'ifood_order_id',
 ];
 
+const NESTED_IDENTIFIER_KEYS = [
+  '_id',
+  'id',
+  'rootId',
+  'root_id',
+  'externalId',
+  'external_id',
+];
+
+function isScalarValue(value: any): value is string | number | boolean {
+  return ['string', 'number', 'boolean'].includes(typeof value);
+}
+
+function scalarToText(value: any): string {
+  return isScalarValue(value) ? String(value).trim() : '';
+}
+
+function extractScalarValue(value: any): string | number | boolean | undefined {
+  if (isScalarValue(value) && scalarToText(value)) {
+    return value;
+  }
+
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  for (const key of NESTED_IDENTIFIER_KEYS) {
+    const nestedValue = value[key];
+    if (isScalarValue(nestedValue) && scalarToText(nestedValue)) {
+      return nestedValue;
+    }
+  }
+
+  return undefined;
+}
+
 function firstValueFromKeys(payload: any, keys: string[]): any {
   if (!payload || typeof payload !== 'object') {
     return undefined;
   }
 
   for (const key of keys) {
-    const value = payload[key];
-    if (value !== undefined && value !== null && String(value).trim()) {
+    const value = extractScalarValue(payload[key]);
+    if (value !== undefined) {
       return value;
     }
   }
@@ -104,7 +140,7 @@ function firstValueFromKeys(payload: any, keys: string[]): any {
 
   for (const candidate of nestedCandidates) {
     const value = firstValueFromKeys(candidate, keys);
-    if (value !== undefined && value !== null && String(value).trim()) {
+    if (value !== undefined) {
       return value;
     }
   }
@@ -125,11 +161,7 @@ function firstValueFromPath(payload: any, path: string): any {
     return current[key];
   }, payload);
 
-  if (value !== undefined && value !== null && String(value).trim()) {
-    return value;
-  }
-
-  return undefined;
+  return extractScalarValue(value);
 }
 
 function firstValueFromPaths(payload: any, paths: string[]): any {
@@ -139,7 +171,7 @@ function firstValueFromPaths(payload: any, paths: string[]): any {
 
   for (const path of paths) {
     const value = firstValueFromPath(payload, path);
-    if (value !== undefined && value !== null && String(value).trim()) {
+    if (value !== undefined) {
       return value;
     }
   }
@@ -153,7 +185,7 @@ function firstValueFromPaths(payload: any, paths: string[]): any {
 
   for (const candidate of wrapperCandidates) {
     const value = firstValueFromPaths(candidate, paths);
-    if (value !== undefined && value !== null && String(value).trim()) {
+    if (value !== undefined) {
       return value;
     }
   }
@@ -162,7 +194,7 @@ function firstValueFromPaths(payload: any, paths: string[]): any {
 }
 
 function normalizeText(value: any): string {
-  return String(value ?? '').trim();
+  return scalarToText(value);
 }
 
 function normalizeStatus(value: any): string {

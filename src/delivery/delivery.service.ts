@@ -1815,6 +1815,12 @@ export class DeliveryService implements OnModuleInit {
       ifoodDispatchSynced: data.ifoodDispatchSynced ?? false,
       ifoodArrivedAtDestinationSynced:
         data.ifoodArrivedAtDestinationSynced ?? false,
+      source: data.source ?? null,
+      externalOrderId: data.externalOrderId ?? null,
+      anotaAiOrderId: data.anotaAiOrderId ?? null,
+      anotaAiShortId: data.anotaAiShortId ?? null,
+      integrationOrigin: data.integrationOrigin ?? null,
+      rawIntegrationPayload: data.rawIntegrationPayload ?? null,
     };
   }
 
