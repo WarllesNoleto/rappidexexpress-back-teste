@@ -67,6 +67,7 @@ export class AnotaAiService {
       let fetchedFullOrder = false;
 
       if (orderId && this.shouldFetchFullOrder(payload)) {
+        this.warnEnabledStoreWithoutToken(establishment);
         payload = await this.getOrder(orderId, establishment);
         fetchedFullOrder = true;
         this.logger.log('[ANOTA AI] Pedido consultado com sucesso na API');
@@ -129,6 +130,8 @@ export class AnotaAiService {
       if (!establishment) {
         return;
       }
+
+      this.warnEnabledStoreWithoutToken(establishment);
 
       if (!establishment.anotaAiEnabled) {
         this.logger.warn('[ANOTA AI] Integração desativada para esta loja');
@@ -246,11 +249,35 @@ export class AnotaAiService {
     const globalToken = String(
       this.configService.get<string>('ANOTA_AI_TOKEN') || '',
     ).trim();
+    const token = storeToken || globalToken;
+
+    if (establishment?.anotaAiEnabled && !storeToken) {
+      this.logger.warn(
+        `[ANOTA AI] Loja ${establishment.id} está com Anota AI ativa sem anotaAiToken cadastrado; usando ANOTA_AI_TOKEN global apenas como fallback opcional`,
+      );
+    }
+
+    if (!token) {
+      this.logger.warn(
+        '[ANOTA AI] Nenhum token disponível para consultar a API da Anota AI',
+      );
+    }
 
     return {
-      Authorization: storeToken || globalToken,
+      ...(token ? { Authorization: token } : {}),
       'Content-Type': 'application/json',
     };
+  }
+
+  private warnEnabledStoreWithoutToken(establishment?: UserEntity) {
+    if (
+      establishment?.anotaAiEnabled &&
+      !String(establishment.anotaAiToken || '').trim()
+    ) {
+      this.logger.warn(
+        `[ANOTA AI] Loja ${establishment.id} está com Anota AI ativa, mas sem token próprio em anotaAiToken`,
+      );
+    }
   }
 
   private shouldFetchFullOrder(payload: any) {

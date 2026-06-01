@@ -5,6 +5,20 @@ import {
 } from '../../shared/constants/enums.constants';
 import { UserEntity } from '../../database/entities/user.entity';
 
+function maskAnotaAiToken(token?: string): string {
+  const normalizedToken = String(token || '').trim();
+
+  if (!normalizedToken) {
+    return '';
+  }
+
+  if (normalizedToken.length <= 10) {
+    return `${normalizedToken.slice(0, 2)}...${normalizedToken.slice(-2)}`;
+  }
+
+  return `${normalizedToken.slice(0, 5)}...${normalizedToken.slice(-6)}`;
+}
+
 export class UserResult {
   @Expose()
   id: string;
@@ -38,7 +52,7 @@ export class UserResult {
 
   @Expose()
   cityId: string;
-  
+
   @Expose()
   useIfoodIntegration: boolean;
 
@@ -83,13 +97,18 @@ export class UserResult {
   anotaAiIgnoreIfoodOrders: boolean;
 
   public static fromEntity(user: UserEntity) {
-    return plainToClass<UserResult, UserResult>(UserResult, {
-      ...user,
-      usesExternalIfoodPdv: Boolean(user?.usesExternalIfoodPdv),
-      anotaAiEnabled: Boolean(user?.anotaAiEnabled),
-      anotaAiIgnoreIfoodOrders: user?.anotaAiIgnoreIfoodOrders !== false,
-    } as UserResult, {
-      excludeExtraneousValues: true,
-    });
+    return plainToClass<UserResult, UserResult>(
+      UserResult,
+      {
+        ...user,
+        usesExternalIfoodPdv: Boolean(user?.usesExternalIfoodPdv),
+        anotaAiEnabled: Boolean(user?.anotaAiEnabled),
+        anotaAiToken: maskAnotaAiToken(user?.anotaAiToken),
+        anotaAiIgnoreIfoodOrders: user?.anotaAiIgnoreIfoodOrders !== false,
+      } as UserResult,
+      {
+        excludeExtraneousValues: true,
+      },
+    );
   }
 }
