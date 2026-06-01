@@ -4,15 +4,7 @@ import {
 } from '../../shared/constants/enums.constants';
 import { CreateDeliveryDto } from '../../delivery/dto';
 
-const ACCEPTED_STATUS_VALUES = new Set([
-  '1',
-  'em_producao',
-  'em produção',
-  'production',
-  'preparing',
-  'accepted',
-  'confirmed',
-]);
+const ACCEPTED_STATUS_VALUES = new Set(['1']);
 
 const ANOTA_AI_SHORT_ID_KEYS = [
   'shortId',
@@ -223,6 +215,8 @@ function hasAnotaAiOrderShape(payload: any): boolean {
     'payment',
     'totals',
     'items',
+    'shortId',
+    'type',
   ].some((key) => payload[key] !== undefined && payload[key] !== null);
 }
 
@@ -231,11 +225,39 @@ function normalizeAnotaAiOrderId(value: any): string | undefined {
   return normalized || undefined;
 }
 
+function getTrustedGenericAnotaAiOrderId(payload: any): string | undefined {
+  if (!hasAnotaAiOrderShape(payload)) {
+    return undefined;
+  }
+
+  return (
+    normalizeAnotaAiOrderId(payload?._id) ||
+    normalizeAnotaAiOrderId(payload?.id)
+  );
+}
+
+function getSpecificAnotaAiOrderId(payload: any): string | undefined {
+  return (
+    normalizeAnotaAiOrderId(payload?.orderId) ||
+    normalizeAnotaAiOrderId(payload?.order_id) ||
+    normalizeAnotaAiOrderId(payload?.pedidoId) ||
+    normalizeAnotaAiOrderId(payload?.pedido_id)
+  );
+}
+
+function getRootSpecificAnotaAiOrderId(payload: any): string | undefined {
+  return (
+    normalizeAnotaAiOrderId(payload?.order_id) ||
+    normalizeAnotaAiOrderId(payload?.orderId) ||
+    normalizeAnotaAiOrderId(payload?.pedido_id) ||
+    normalizeAnotaAiOrderId(payload?.pedidoId)
+  );
+}
+
 export function getAnotaAiOrderId(payload: any): string | undefined {
   const orderId =
-    normalizeAnotaAiOrderId(payload?.order?._id) ||
-    normalizeAnotaAiOrderId(payload?.order?.id) ||
-    normalizeAnotaAiOrderId(payload?.order?.orderId);
+    getTrustedGenericAnotaAiOrderId(payload?.order) ||
+    getSpecificAnotaAiOrderId(payload?.order);
 
   if (orderId) {
     console.log('[ANOTA AI] ID do pedido extraído do objeto order');
@@ -243,9 +265,8 @@ export function getAnotaAiOrderId(payload: any): string | undefined {
   }
 
   const dataId =
-    normalizeAnotaAiOrderId(payload?.data?._id) ||
-    normalizeAnotaAiOrderId(payload?.data?.id) ||
-    normalizeAnotaAiOrderId(payload?.data?.orderId);
+    getTrustedGenericAnotaAiOrderId(payload?.data) ||
+    getSpecificAnotaAiOrderId(payload?.data);
 
   if (dataId) {
     console.log('[ANOTA AI] ID do pedido extraído do objeto data');
@@ -253,37 +274,30 @@ export function getAnotaAiOrderId(payload: any): string | undefined {
   }
 
   const nestedPayloadId =
-    normalizeAnotaAiOrderId(payload?.payload?._id) ||
-    normalizeAnotaAiOrderId(payload?.payload?.id);
+    getTrustedGenericAnotaAiOrderId(payload?.payload) ||
+    getSpecificAnotaAiOrderId(payload?.payload);
 
   if (nestedPayloadId) {
-    console.log('[ANOTA AI] ID do pedido extraído da raiz do payload');
+    console.log('[ANOTA AI] ID do pedido extraído do objeto payload');
     return nestedPayloadId;
   }
 
   const resourceId =
-    normalizeAnotaAiOrderId(payload?.resource?._id) ||
-    normalizeAnotaAiOrderId(payload?.resource?.id);
+    getTrustedGenericAnotaAiOrderId(payload?.resource) ||
+    getSpecificAnotaAiOrderId(payload?.resource);
 
   if (resourceId) {
-    console.log('[ANOTA AI] ID do pedido extraído da raiz do payload');
+    console.log('[ANOTA AI] ID do pedido extraído do objeto resource');
     return resourceId;
   }
 
   const rootId =
-    normalizeAnotaAiOrderId(payload?._id) ||
-    normalizeAnotaAiOrderId(payload?.order_id) ||
-    normalizeAnotaAiOrderId(payload?.orderId);
+    getTrustedGenericAnotaAiOrderId(payload) ||
+    getRootSpecificAnotaAiOrderId(payload);
 
   if (rootId) {
     console.log('[ANOTA AI] ID do pedido extraído da raiz do payload');
     return rootId;
-  }
-
-  const rootGenericId = normalizeAnotaAiOrderId(payload?.id);
-  if (rootGenericId && hasAnotaAiOrderShape(payload)) {
-    console.log('[ANOTA AI] ID do pedido extraído da raiz do payload');
-    return rootGenericId;
   }
 
   console.warn('[ANOTA AI] ID do pedido não encontrado');
