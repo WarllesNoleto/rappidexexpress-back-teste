@@ -48,16 +48,25 @@ export class AnotaAiService {
   async processWebhook(
     rawPayload: any,
     headers?: Record<string, any>,
+    requestInfo?: { ip?: string; origin?: string },
   ): Promise<void> {
     this.logger.log('[ANOTA AI] Webhook recebido');
     this.logger.log(
       `[ANOTA AI] Payload recebido ${JSON.stringify(rawPayload || {})}`,
     );
-    this.logWebhookHeaders(headers);
+    this.logWebhookRequest(rawPayload, headers, requestInfo);
 
     try {
       if (this.configService.get<string>('ANOTA_AI_ENABLED') === 'false') {
         this.logger.warn('[ANOTA AI] Integração global desativada');
+        return;
+      }
+
+      if (this.shouldRunPollingFallback(rawPayload)) {
+        this.logger.log(
+          '[ANOTA AI] Webhook sem dados do pedido, iniciando polling de fallback',
+        );
+        await this.runPollingForAllStores();
         return;
       }
 
@@ -199,14 +208,17 @@ export class AnotaAiService {
     }
   }
 
-  async listOrders(filters?: {
-    status?: string | number;
-    page?: number;
-    limit?: number;
-  }): Promise<any> {
+  async listOrders(
+    filters?: {
+      status?: string | number;
+      page?: number;
+      limit?: number;
+    },
+    establishment?: UserEntity,
+  ): Promise<any> {
     const response = await this.http.get('/partnerauth/v2/orders', {
       params: filters,
-      headers: this.getAuthHeaders(),
+      headers: this.getAuthHeaders(establishment),
     });
     return response.data;
   }
@@ -227,8 +239,50 @@ export class AnotaAiService {
     return this.postOrderAction(orderId, 'cancel', { reason });
   }
 
-  async fetchAcceptedOrdersForPolling(page = 1, limit = 50): Promise<any> {
-    return this.listOrders({ status: 1, page, limit });
+  async fetchAcceptedOrdersForPolling(
+    establishment: UserEntity,
+    page = 1,
+    limit = 50,
+  ): Promise<any> {
+    this.logger.log('[ANOTA AI] Buscando pedidos em produção por polling');
+    return this.listOrders({ status: 1, page, limit }, establishment);
+  }
+
+  async runPollingForAllStores(): Promise<void> {
+    this.logger.log('[ANOTA AI] Buscando lojas Anota AI ativas para polling');
+    const establishments = await this.userRepository.find({
+      where: {
+        anotaAiEnabled: true,
+        anotaAiToken: { $nin: [null, ''] },
+      } as any,
+    });
+
+    for (const establishment of establishments.filter((store) =>
+      Boolean(String(store.anotaAiToken || '').trim()),
+    )) {
+      this.logger.log('[ANOTA AI] Loja consultada por polling');
+
+      try {
+        const response = await this.fetchAcceptedOrdersForPolling(
+          establishment,
+          1,
+          50,
+        );
+        const orders = this.extractOrdersFromListResponse(response);
+        this.logger.log(
+          `[ANOTA AI] Pedidos retornados no polling ${orders.length}`,
+        );
+
+        for (const order of orders) {
+          await this.processPollingOrder(order, establishment);
+        }
+      } catch (error: any) {
+        this.logger.error(
+          '[ANOTA AI] Erro ao consultar pedidos via polling',
+          error?.stack || error,
+        );
+      }
+    }
   }
 
   private async postOrderAction(
@@ -329,6 +383,124 @@ export class AnotaAiService {
     ].some((key) => candidate[key] !== undefined && candidate[key] !== null);
   }
 
+  private shouldRunPollingFallback(payload: any): boolean {
+    if (!payload || typeof payload !== 'object') {
+      return true;
+    }
+
+    if (!Object.keys(payload).length) {
+      return true;
+    }
+
+    const orderPayload = this.extractOrderPayload(payload);
+    const hasOrderId = Boolean(
+      getAnotaAiOrderId(payload) || getAnotaAiOrderId(orderPayload),
+    );
+    const hasStatus = Boolean(
+      getAnotaAiOrderStatus(orderPayload) || getAnotaAiOrderStatus(payload),
+    );
+    const hasOrderDetails = Boolean(
+      orderPayload?.customer ||
+      orderPayload?.deliveryAddress ||
+      orderPayload?.items,
+    );
+
+    return !hasOrderId || !hasStatus || !hasOrderDetails;
+  }
+
+  private extractOrdersFromListResponse(response: any): any[] {
+    const candidates = [
+      response?.orders,
+      response?.data,
+      response?.items,
+      response?.results,
+      response?.result,
+      response,
+    ];
+
+    for (const candidate of candidates) {
+      if (Array.isArray(candidate)) {
+        return candidate;
+      }
+
+      if (Array.isArray(candidate?.orders)) {
+        return candidate.orders;
+      }
+
+      if (Array.isArray(candidate?.data)) {
+        return candidate.data;
+      }
+    }
+
+    return [];
+  }
+
+  private async processPollingOrder(
+    rawOrder: any,
+    establishment: UserEntity,
+  ): Promise<void> {
+    let payload = this.extractOrderPayload(rawOrder);
+    const orderId = getAnotaAiOrderId(payload) || getAnotaAiOrderId(rawOrder);
+    const status =
+      getAnotaAiOrderStatus(payload) || getAnotaAiOrderStatus(rawOrder);
+    const normalizedStatus = String(status ?? '').trim();
+
+    if (normalizedStatus !== '1') {
+      return;
+    }
+
+    if (orderId && this.shouldFetchFullOrder(payload)) {
+      try {
+        payload = this.extractOrderPayload(
+          await this.getOrder(orderId, establishment),
+        );
+      } catch (error: any) {
+        this.logger.error(
+          '[ANOTA AI] Erro ao consultar pedidos via polling',
+          error?.stack || error,
+        );
+        return;
+      }
+    }
+
+    const fullOrderId = getAnotaAiOrderId(payload) || orderId;
+    if (!fullOrderId) {
+      return;
+    }
+
+    if (await this.hasDuplicateDelivery(fullOrderId, payload)) {
+      this.logger.log('[ANOTA AI] Pedido ignorado via polling por duplicidade');
+      return;
+    }
+
+    if (!isAcceptedAnotaAiOrder(payload)) {
+      return;
+    }
+
+    if (
+      establishment.anotaAiIgnoreIfoodOrders !== false &&
+      isIfoodOrderFromAnotaAi(payload)
+    ) {
+      this.logger.log(
+        '[ANOTA AI] Pedido iFood ignorado para evitar duplicidade',
+      );
+      return;
+    }
+
+    const delivery = mapAnotaAiOrderToDelivery(payload, establishment.id);
+    await this.deliveryService.createDelivery(
+      delivery,
+      {
+        id: establishment.id,
+        type: establishment.type || UserType.SHOPKEEPER,
+        permission: establishment.permission,
+      } as any,
+      { skipCreditConsumption: true, creditOrderId: fullOrderId },
+    );
+
+    this.logger.log('[ANOTA AI] Pedido importado via polling');
+  }
+
   validateWebhookToken(headers?: Record<string, any>): boolean {
     const expectedToken = String(
       this.configService.get<string>('ANOTA_AI_WEBHOOK_TOKEN') || '',
@@ -357,10 +529,34 @@ export class AnotaAiService {
     return isValid;
   }
 
-  private logWebhookHeaders(headers?: Record<string, any>) {
+  private logWebhookRequest(
+    payload: any,
+    headers?: Record<string, any>,
+    requestInfo?: { ip?: string; origin?: string },
+  ) {
     const mainHeaders = this.pickWebhookHeaders(headers);
+    const normalizedHeaders = this.normalizeHeaders(headers);
+    const serializedBody = JSON.stringify(payload || {});
+    const contentLength = normalizedHeaders['content-length'];
+    const bodySize = contentLength ?? Buffer.byteLength(serializedBody, 'utf8');
+    const bodyIsEmpty =
+      !payload ||
+      (typeof payload === 'object' &&
+        !Array.isArray(payload) &&
+        !Object.keys(payload).length);
+
     this.logger.log(
       `[ANOTA AI] Headers principais do webhook ${JSON.stringify(mainHeaders)}`,
+    );
+    this.logger.log(
+      `[ANOTA AI] Origem do webhook ${JSON.stringify({
+        ip: requestInfo?.ip,
+        origin: requestInfo?.origin,
+        userAgent: normalizedHeaders['user-agent'],
+        contentType: normalizedHeaders['content-type'],
+        bodySize,
+        bodyIsEmpty,
+      })}`,
     );
   }
 
