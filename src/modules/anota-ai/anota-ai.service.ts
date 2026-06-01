@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosError, AxiosInstance } from 'axios';
 import { MongoRepository } from 'typeorm';
 import { DeliveryService } from '../../delivery/delivery.service';
 import { DeliveryEntity, UserEntity } from '../../database/entities';
@@ -19,8 +19,12 @@ import {
 
 @Injectable()
 export class AnotaAiService {
+  private static readonly API_PREFIX = '/partnerauth/v2';
+  private static readonly ORDERS_PATH = `${AnotaAiService.API_PREFIX}/orders`;
+
   private readonly logger = new Logger(AnotaAiService.name);
   private readonly http: AxiosInstance;
+  private readonly anotaAiBaseUrl: string;
 
   constructor(
     private readonly configService: ConfigService,
@@ -30,8 +34,11 @@ export class AnotaAiService {
     private readonly deliveryRepository: MongoRepository<DeliveryEntity>,
     private readonly deliveryService: DeliveryService,
   ) {
+    this.anotaAiBaseUrl = this.normalizeAnotaAiBaseUrl(
+      this.configService.get<string>('ANOTA_AI_BASE_URL') || '',
+    );
     this.http = axios.create({
-      baseURL: this.configService.get<string>('ANOTA_AI_BASE_URL') || '',
+      baseURL: this.anotaAiBaseUrl,
       headers: {
         'Content-Type': 'application/json',
       },
@@ -177,11 +184,8 @@ export class AnotaAiService {
         '[ANOTA AI] Pedido criado no Rappidex em aguardando liberação',
       );
     } catch (error: any) {
-      if (error?.config?.url?.includes('/partnerauth/v2/orders/')) {
-        this.logger.error(
-          '[ANOTA AI] Erro ao consultar pedido na API',
-          error?.stack || error,
-        );
+      if (error?.config?.url?.includes(AnotaAiService.ORDERS_PATH)) {
+        this.logAxiosError('[ANOTA AI] Erro ao consultar pedido na API', error);
       }
       this.logger.error(
         '[ANOTA AI] Erro ao processar webhook',
@@ -191,19 +195,16 @@ export class AnotaAiService {
   }
 
   async getOrder(orderId: string, establishment?: UserEntity): Promise<any> {
+    const path = `${AnotaAiService.ORDERS_PATH}/${orderId}`;
+    this.logAnotaAiRequest('GET', path);
+
     try {
-      const response = await this.http.get(
-        `/partnerauth/v2/orders/${orderId}`,
-        {
-          headers: this.getAuthHeaders(establishment),
-        },
-      );
+      const response = await this.http.get(path, {
+        headers: this.getAuthHeaders(establishment),
+      });
       return response.data;
     } catch (error) {
-      this.logger.error(
-        '[ANOTA AI] Erro ao consultar pedido na API',
-        error instanceof Error ? error.stack : String(error),
-      );
+      this.logAxiosError('[ANOTA AI] Erro ao consultar pedido na API', error);
       throw error;
     }
   }
@@ -216,27 +217,37 @@ export class AnotaAiService {
     },
     establishment?: UserEntity,
   ): Promise<any> {
-    const response = await this.http.get('/partnerauth/v2/orders', {
+    const path = AnotaAiService.ORDERS_PATH;
+    this.logAnotaAiRequest('GET', path, filters, 'polling');
+
+    const response = await this.http.get(path, {
       params: filters,
       headers: this.getAuthHeaders(establishment),
     });
     return response.data;
   }
 
-  async acceptOrder(orderId: string): Promise<any> {
-    return this.postOrderAction(orderId, 'accept');
+  async acceptOrder(orderId: string, establishment?: UserEntity): Promise<any> {
+    return this.postOrderAction(orderId, 'accept', undefined, establishment);
   }
 
-  async markOrderReady(orderId: string): Promise<any> {
-    return this.postOrderAction(orderId, 'ready');
+  async markOrderReady(
+    orderId: string,
+    establishment?: UserEntity,
+  ): Promise<any> {
+    return this.postOrderAction(orderId, 'ready', undefined, establishment);
   }
 
-  async finishOrder(orderId: string): Promise<any> {
-    return this.postOrderAction(orderId, 'finish');
+  async finishOrder(orderId: string, establishment?: UserEntity): Promise<any> {
+    return this.postOrderAction(orderId, 'finish', undefined, establishment);
   }
 
-  async cancelOrder(orderId: string, reason: string): Promise<any> {
-    return this.postOrderAction(orderId, 'cancel', { reason });
+  async cancelOrder(
+    orderId: string,
+    reason: string,
+    establishment?: UserEntity,
+  ): Promise<any> {
+    return this.postOrderAction(orderId, 'cancel', { reason }, establishment);
   }
 
   async fetchAcceptedOrdersForPolling(
@@ -253,13 +264,10 @@ export class AnotaAiService {
     const establishments = await this.userRepository.find({
       where: {
         anotaAiEnabled: true,
-        anotaAiToken: { $nin: [null, ''] },
       } as any,
     });
 
-    for (const establishment of establishments.filter((store) =>
-      Boolean(String(store.anotaAiToken || '').trim()),
-    )) {
+    for (const establishment of establishments) {
       this.logger.log('[ANOTA AI] Loja consultada por polling');
 
       try {
@@ -277,9 +285,9 @@ export class AnotaAiService {
           await this.processPollingOrder(order, establishment);
         }
       } catch (error: any) {
-        this.logger.error(
+        this.logAxiosError(
           '[ANOTA AI] Erro ao consultar pedidos via polling',
-          error?.stack || error,
+          error,
         );
       }
     }
@@ -289,13 +297,138 @@ export class AnotaAiService {
     orderId: string,
     action: string,
     body?: any,
+    establishment?: UserEntity,
   ): Promise<any> {
-    const response = await this.http.post(
-      `/partnerauth/v2/orders/${orderId}/${action}`,
-      body || {},
-      { headers: this.getAuthHeaders() },
-    );
+    const path = `${AnotaAiService.ORDERS_PATH}/${orderId}/${action}`;
+    this.logAnotaAiRequest('POST', path);
+
+    const response = await this.http.post(path, body || {}, {
+      headers: this.getAuthHeaders(establishment),
+    });
     return response.data;
+  }
+
+  private logAnotaAiRequest(
+    method: string,
+    path: string,
+    params?: Record<string, any>,
+    context?: 'polling',
+  ) {
+    const finalUrl = this.buildAnotaAiUrl(path, params);
+
+    this.logger.log(`[ANOTA AI] Base URL Anota AI: ${this.anotaAiBaseUrl}`);
+    this.logger.log(`[ANOTA AI] Path usado: ${path}`);
+
+    if (context === 'polling') {
+      this.logger.log(`[ANOTA AI] URL polling Anota AI: ${finalUrl}`);
+      return;
+    }
+
+    this.logger.log(
+      `[ANOTA AI] URL Anota AI ${method.toUpperCase()}: ${finalUrl}`,
+    );
+  }
+
+  private logAxiosError(context: string, error: any) {
+    if (!axios.isAxiosError(error)) {
+      this.logger.error(context, error instanceof Error ? error.stack : error);
+      return;
+    }
+
+    const axiosError = error as AxiosError;
+    const statusCode = axiosError.response?.status;
+    const method = String(axiosError.config?.method || 'GET').toUpperCase();
+    const url = this.buildAnotaAiUrl(
+      axiosError.config?.url || '',
+      axiosError.config?.params as Record<string, any>,
+      axiosError.config?.baseURL,
+    );
+    const responseData = this.serializeLogData(axiosError.response?.data);
+
+    this.logger.error(
+      `${context} | status=${statusCode || 'sem_status'} | statusCode=${statusCode || 'sem_status'} | url=${url} | method=${method} | response.data=${responseData}`,
+      axiosError.stack,
+    );
+  }
+
+  private normalizeAnotaAiBaseUrl(baseUrl: string) {
+    const normalizedBaseUrl = String(baseUrl || '')
+      .trim()
+      .replace(/\/+$/, '');
+    const duplicatedPrefixPattern = new RegExp(
+      `${AnotaAiService.API_PREFIX.replace(/\//g, '\\/')}$`,
+      'i',
+    );
+
+    return normalizedBaseUrl.replace(duplicatedPrefixPattern, '');
+  }
+
+  private buildAnotaAiUrl(
+    path: string,
+    params?: Record<string, any>,
+    baseUrl = this.anotaAiBaseUrl,
+  ) {
+    const sanitizedPath = this.sanitizeUrlForLog(path || '');
+    const sanitizedBaseUrl = this.sanitizeUrlForLog(
+      this.normalizeAnotaAiBaseUrl(baseUrl || ''),
+    );
+    let finalUrl: string;
+
+    if (/^https?:\/\//i.test(sanitizedPath)) {
+      finalUrl = sanitizedPath;
+    } else if (sanitizedBaseUrl) {
+      finalUrl = `${sanitizedBaseUrl}${sanitizedPath.startsWith('/') ? '' : '/'}${sanitizedPath}`;
+    } else {
+      finalUrl = sanitizedPath;
+    }
+
+    const queryString = this.buildQueryString(params);
+    if (queryString) {
+      finalUrl += `${finalUrl.includes('?') ? '&' : '?'}${queryString}`;
+    }
+
+    return finalUrl;
+  }
+
+  private buildQueryString(params?: Record<string, any>) {
+    if (!params || typeof params !== 'object') {
+      return '';
+    }
+
+    const searchParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value === undefined || value === null) {
+        return;
+      }
+
+      if (Array.isArray(value)) {
+        value.forEach((item) => searchParams.append(key, String(item)));
+        return;
+      }
+
+      searchParams.append(key, String(value));
+    });
+
+    return searchParams.toString();
+  }
+
+  private sanitizeUrlForLog(url: string) {
+    return String(url || '').replace(
+      /([?&](?:authorization|token|access_token|api_key)=)[^&]+/gi,
+      '$1[REDACTED]',
+    );
+  }
+
+  private serializeLogData(data: any) {
+    if (data === undefined) {
+      return 'undefined';
+    }
+
+    try {
+      return JSON.stringify(data);
+    } catch (error) {
+      return String(data);
+    }
   }
 
   private getAuthHeaders(establishment?: UserEntity) {
@@ -445,6 +578,26 @@ export class AnotaAiService {
       getAnotaAiOrderStatus(payload) || getAnotaAiOrderStatus(rawOrder);
     const normalizedStatus = String(status ?? '').trim();
 
+    if (normalizedStatus === '0') {
+      this.logger.log('[ANOTA AI] Pedido em análise ignorado via polling');
+      return;
+    }
+
+    if (normalizedStatus === '2') {
+      this.logger.log('[ANOTA AI] Pedido pronto ignorado via polling');
+      return;
+    }
+
+    if (normalizedStatus === '3') {
+      this.logger.log('[ANOTA AI] Pedido finalizado ignorado via polling');
+      return;
+    }
+
+    if (normalizedStatus === '4') {
+      this.logger.log('[ANOTA AI] Pedido cancelado ignorado via polling');
+      return;
+    }
+
     if (normalizedStatus !== '1') {
       return;
     }
@@ -455,9 +608,9 @@ export class AnotaAiService {
           await this.getOrder(orderId, establishment),
         );
       } catch (error: any) {
-        this.logger.error(
+        this.logAxiosError(
           '[ANOTA AI] Erro ao consultar pedidos via polling',
-          error?.stack || error,
+          error,
         );
         return;
       }
