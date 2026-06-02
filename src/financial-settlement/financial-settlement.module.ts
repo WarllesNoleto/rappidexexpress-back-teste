@@ -7,7 +7,6 @@ import {
   FinancialSettlementHistoryEntity,
   UserEntity,
 } from '../database/entities';
-import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { FinancialSettlementController } from './financial-settlement.controller';
 import { FinancialSettlementService } from './financial-settlement.service';
 
@@ -21,6 +20,6 @@ import { FinancialSettlementService } from './financial-settlement.service';
     ]),
   ],
   controllers: [FinancialSettlementController],
-  providers: [FinancialSettlementService, WhatsappService],
+  providers: [FinancialSettlementService],
 })
 export class FinancialSettlementModule {}

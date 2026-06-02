@@ -52,7 +52,13 @@ export class FinancialSettlementHistoryEntity {
   sentAt: Date;
 
   @Column()
-  status: 'enviado' | 'erro' | 'pendente';
+  status:
+    | 'PDF_GERADO'
+    | 'WHATSAPP_ABERTO'
+    | 'ENVIO_MANUAL'
+    | 'enviado'
+    | 'erro'
+    | 'pendente';
 
   @Column({ nullable: true })
   errorMessage?: string;

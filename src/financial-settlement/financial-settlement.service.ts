@@ -15,7 +15,6 @@ import {
   UserEntity,
 } from '../database/entities';
 import { StatusDelivery } from '../shared/constants/enums.constants';
-import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { FinancialSettlementQueryDto } from './dto';
 
 type SettlementDelivery = {
@@ -38,8 +37,6 @@ type SettlementData = {
   total: number;
   whatsapp: string;
   adminWhatsapp: string;
-  whatsappPhoneNumberId: string;
-  whatsappCloudToken: string;
   filename: string;
   message: string;
 };
@@ -57,7 +54,6 @@ export class FinancialSettlementService {
     private readonly cityRepository: MongoRepository<CityEntity>,
     @InjectRepository(FinancialSettlementHistoryEntity)
     private readonly historyRepository: MongoRepository<FinancialSettlementHistoryEntity>,
-    private readonly whatsappService: WhatsappService,
   ) {}
 
   async generatePdf(query: FinancialSettlementQueryDto) {
@@ -78,7 +74,7 @@ export class FinancialSettlementService {
 
     this.logWhatsappContext(settlement, pdfBuffer);
 
-    const history = await this.historyRepository.save({
+    await this.historyRepository.save({
       establishmentId: settlement.establishment.id,
       establishmentName: settlement.establishment.name,
       cityId: settlement.city.id?.toHexString?.() ?? `${settlement.city.id}`,
@@ -91,50 +87,24 @@ export class FinancialSettlementService {
       pixKey: settlement.pixKey,
       whatsappPhone: settlement.whatsapp,
       whatsappAdminPhone: settlement.adminWhatsapp,
-      whatsappPhoneNumberId: settlement.whatsappPhoneNumberId,
       filename: settlement.filename,
       sentAt: new Date(),
-      status: 'pendente',
+      status: 'ENVIO_MANUAL',
     });
 
-    try {
-      const providerResponse = await this.whatsappService.sendDocumentMessage({
-        phone: settlement.whatsapp,
-        message: settlement.message,
-        pdfBuffer,
-        filename: settlement.filename,
-        token: settlement.whatsappCloudToken,
-        phoneNumberId: settlement.whatsappPhoneNumberId,
-        useCityConfigOnly: true,
-      });
-
-      await this.historyRepository.save({
-        ...history,
-        status: 'enviado',
-        sentAt: new Date(),
-      });
-
-      return {
-        success: true,
-        message: 'Relatório enviado com sucesso para o WhatsApp do lojista.',
-        filename: settlement.filename,
-        providerResponse,
-      };
-    } catch (error: any) {
-      await this.historyRepository.save({
-        ...history,
-        status: 'erro',
-        sentAt: new Date(),
-        errorMessage:
-          error?.response?.data?.error?.message ||
-          error?.response?.data?.message ||
-          error?.message ||
-          'Erro desconhecido ao enviar WhatsApp.',
-      });
-
-      this.logMetaError(error);
-      throw error;
-    }
+    return {
+      success: true,
+      message:
+        'PDF gerado e WhatsApp aberto com a mensagem pronta. Anexe o PDF manualmente antes de enviar.',
+      filename: settlement.filename,
+      whatsappPhone: settlement.whatsapp,
+      whatsappMessage: settlement.message,
+      whatsappUrl: this.buildWhatsappUrl(
+        settlement.whatsapp,
+        settlement.message,
+      ),
+      status: 'ENVIO_MANUAL',
+    };
   }
 
   private async buildSettlement(query: FinancialSettlementQueryDto) {
@@ -150,7 +120,9 @@ export class FinancialSettlementService {
 
     const whatsapp = this.normalizeWhatsapp(establishment.phone);
     if (!whatsapp) {
-      throw new BadRequestException('WhatsApp do lojista não cadastrado.');
+      throw new BadRequestException(
+        'Este lojista não possui WhatsApp cadastrado no perfil.',
+      );
     }
 
     const deliveries = await this.deliveryRepository.find({
@@ -193,7 +165,6 @@ export class FinancialSettlementService {
       );
     }
 
-    const whatsappConfig = this.resolveWhatsappConfig(city);
     const adminWhatsapp = this.normalizeWhatsapp(city.adminWhatsapp);
 
     const total = deliveries.length * deliveryFeeValue;
@@ -222,37 +193,12 @@ export class FinancialSettlementService {
       total,
       whatsapp,
       adminWhatsapp,
-      whatsappPhoneNumberId: whatsappConfig.phoneNumberId,
-      whatsappCloudToken: whatsappConfig.token,
       filename,
       message: '',
     };
     settlement.message = this.buildWhatsappMessage(settlement);
 
     return settlement;
-  }
-
-  private resolveWhatsappConfig(city: CityEntity) {
-    const token = String(city.whatsappCloudToken ?? '').trim();
-    const phoneNumberId = String(city.whatsappPhoneNumberId ?? '').trim();
-
-    if (!token) {
-      throw new BadRequestException(
-        'Token da WhatsApp Cloud API não configurado para esta cidade.',
-      );
-    }
-
-    if (!phoneNumberId) {
-      throw new BadRequestException(
-        'Phone Number ID da cidade não configurado.',
-      );
-    }
-
-    return this.whatsappService.resolveDocumentMessageConfig({
-      token,
-      phoneNumberId,
-      useCityConfigOnly: true,
-    });
   }
 
   private async resolveCity(
@@ -312,7 +258,7 @@ export class FinancialSettlementService {
   }
 
   private buildWhatsappMessage(settlement: SettlementData) {
-    return `Olá, ${settlement.establishment.name}!\n\nSegue em anexo o fechamento das entregas realizadas pela Rappidex Express.\n\nPeríodo: ${this.formatDate(settlement.periodStart)} até ${this.formatDate(settlement.periodEnd)}\nQuantidade de entregas: ${settlement.deliveries.length}\nValor por entrega: ${this.formatCurrency(settlement.deliveryFeeValue)}\nTotal a pagar: ${this.formatCurrency(settlement.total)}\n\nChave PIX para pagamento:\n${settlement.pixKey}\n\nObrigado pela parceria!\nRappidex Express`;
+    return `Olá, ${settlement.establishment.name}!\n\nSegue o fechamento das entregas realizadas pela Rappidex Express.\n\nCidade: ${this.formatCity(settlement.city)}\nPeríodo: ${this.formatDate(settlement.periodStart)} até ${this.formatDate(settlement.periodEnd)}\nQuantidade de entregas: ${settlement.deliveries.length}\nValor por entrega: ${this.formatCurrency(settlement.deliveryFeeValue)}\nTotal a pagar: ${this.formatCurrency(settlement.total)}\n\nChave PIX para pagamento:\n${settlement.pixKey}\n\nO relatório em PDF foi gerado. Por favor, confira o arquivo anexado.\n\nObrigado pela parceria!\nRappidex Express`;
   }
 
   private createPdfBuffer(settlement: SettlementData) {
@@ -440,34 +386,33 @@ export class FinancialSettlementService {
 
   private normalizeWhatsapp(phone?: string) {
     const digits = String(phone ?? '')
-      .trim()
       .replace(/[\s()+-]/g, '')
       .replace(/\D/g, '');
 
     if (!digits) return '';
 
-    return digits.startsWith('55') ? digits : `55${digits}`;
+    if (digits.length === 11 && !digits.startsWith('55')) {
+      return `55${digits}`;
+    }
+
+    return digits;
+  }
+
+  private buildWhatsappUrl(phone: string, message: string) {
+    return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
   }
 
   private logWhatsappContext(settlement: SettlementData, pdfBuffer: Buffer) {
     this.logger.log(
       JSON.stringify({
-        message: 'Enviando fechamento financeiro pelo WhatsApp',
+        message:
+          'Preparando fechamento financeiro para envio manual pelo WhatsApp',
         cityId: settlement.city.id?.toHexString?.() ?? `${settlement.city.id}`,
         cityName: this.formatCity(settlement.city),
-        phoneNumberId: settlement.whatsappPhoneNumberId,
         destinationPhone: settlement.whatsapp,
-        hasTokenConfigured: Boolean(settlement.whatsappCloudToken),
         hasPdf: Boolean(pdfBuffer?.length),
         pdfBytes: pdfBuffer?.length ?? 0,
       }),
-    );
-  }
-
-  private logMetaError(error: any) {
-    const response = error?.response ?? error?.getResponse?.();
-    this.logger.error(
-      `Resposta completa da Meta/WhatsApp Cloud API em caso de erro: ${JSON.stringify(response)}`,
     );
   }
 
