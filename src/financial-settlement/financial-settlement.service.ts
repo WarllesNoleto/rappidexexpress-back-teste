@@ -36,7 +36,6 @@ type SettlementData = {
   pixKey: string;
   total: number;
   whatsapp: string;
-  adminWhatsapp: string;
   filename: string;
   message: string;
 };
@@ -86,7 +85,6 @@ export class FinancialSettlementService {
       total: settlement.total,
       pixKey: settlement.pixKey,
       whatsappPhone: settlement.whatsapp,
-      whatsappAdminPhone: settlement.adminWhatsapp,
       filename: settlement.filename,
       sentAt: new Date(),
       status: 'ENVIO_MANUAL',
@@ -165,14 +163,8 @@ export class FinancialSettlementService {
       );
     }
 
-    const adminWhatsapp = this.normalizeWhatsapp(city.adminWhatsapp);
-
     const total = deliveries.length * deliveryFeeValue;
-    const filename = this.buildFilename(
-      establishment.name,
-      periodStart,
-      periodEnd,
-    );
+    const filename = this.buildFilename(establishment.name);
     const settlementDeliveries = deliveries.map((delivery) => ({
       orderId: delivery.ifoodDisplayId || delivery.ifoodOrderId || delivery.id,
       clientName: delivery.clientName,
@@ -192,7 +184,6 @@ export class FinancialSettlementService {
       pixKey,
       total,
       whatsapp,
-      adminWhatsapp,
       filename,
       message: '',
     };
@@ -258,7 +249,7 @@ export class FinancialSettlementService {
   }
 
   private buildWhatsappMessage(settlement: SettlementData) {
-    return `Olá, ${settlement.establishment.name}!\n\nSegue o fechamento das entregas realizadas pela Rappidex Express.\n\nCidade: ${this.formatCity(settlement.city)}\nPeríodo: ${this.formatDate(settlement.periodStart)} até ${this.formatDate(settlement.periodEnd)}\nQuantidade de entregas: ${settlement.deliveries.length}\nValor por entrega: ${this.formatCurrency(settlement.deliveryFeeValue)}\nTotal a pagar: ${this.formatCurrency(settlement.total)}\n\nChave PIX para pagamento:\n${settlement.pixKey}\n\nO relatório em PDF foi gerado. Por favor, confira o arquivo anexado.\n\nObrigado pela parceria!\nRappidex Express`;
+    return `Olá, ${settlement.establishment.name}!\n\nSegue o fechamento das entregas realizadas pela Rappidex Express.\n\nCidade: ${this.formatCity(settlement.city)}\nPeríodo: ${this.formatDate(settlement.periodStart)} até ${this.formatDate(settlement.periodEnd)}\nQuantidade de entregas: ${settlement.deliveries.length}\nValor por entrega: ${this.formatCurrency(settlement.deliveryFeeValue)}\nTotal a pagar: ${this.formatCurrency(settlement.total)}\n\nChave PIX para pagamento:\n${settlement.pixKey}\n\nO relatório em PDF foi gerado. Anexarei o arquivo nesta conversa.\n\nObrigado pela parceria!\nRappidex Express`;
   }
 
   private createPdfBuffer(settlement: SettlementData) {
@@ -374,14 +365,14 @@ export class FinancialSettlementService {
     return base;
   }
 
-  private buildFilename(establishmentName: string, start: Date, end: Date) {
+  private buildFilename(establishmentName: string) {
     const slug = establishmentName
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-zA-Z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
       .toLowerCase();
-    return `fechamento-${slug || 'lojista'}-${this.formatDateForFile(start)}-a-${this.formatDateForFile(end)}.pdf`;
+    return `relatorio_de_fechamento_${slug || 'lojista'}.pdf`;
   }
 
   private normalizeWhatsapp(phone?: string) {
@@ -429,10 +420,6 @@ export class FinancialSettlementService {
 
   private formatDate(date: Date) {
     return date.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
-  }
-
-  private formatDateForFile(date: Date) {
-    return this.formatDate(date).replace(/\//g, '-');
   }
 
   private formatPhone(phone: string) {
