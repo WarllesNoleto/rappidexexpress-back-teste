@@ -148,6 +148,9 @@ export class DeliveryResult {
   ifoodMerchantName?: string;
 
   @Expose()
+  ifoodMerchantLocation?: string;
+
+  @Expose()
   source?: string;
 
   @Expose()
@@ -162,7 +165,31 @@ export class DeliveryResult {
   @Expose()
   integrationOrigin?: string;
 
+  private static findIfoodMerchantConfig(delivery: DeliveryEntity) {
+    const merchantId = String((delivery as any).ifoodMerchantId || '').trim();
+    const merchants = Array.isArray(
+      (delivery as any).establishment?.ifoodMerchants,
+    )
+      ? (delivery as any).establishment.ifoodMerchants
+      : [];
+
+    if (!merchantId || !merchants.length) {
+      return null;
+    }
+
+    return (
+      merchants.find(
+        (merchant) =>
+          String(merchant?.merchantId || '').trim() === merchantId &&
+          merchant?.enabled !== false,
+      ) ?? null
+    );
+  }
+
   public static fromEntity(delivery: DeliveryEntity) {
+    const ifoodMerchantConfig =
+      DeliveryResult.findIfoodMerchantConfig(delivery);
+
     return plainToClass<DeliveryResult, DeliveryResult>(
       DeliveryResult,
       {
@@ -171,7 +198,11 @@ export class DeliveryResult {
         ifoodOrderId: (delivery as any).ifoodOrderId ?? null,
         ifoodDisplayId: (delivery as any).ifoodDisplayId ?? null,
         ifoodMerchantId: (delivery as any).ifoodMerchantId ?? null,
-        ifoodMerchantName: (delivery as any).ifoodMerchantName ?? null,
+        ifoodMerchantName:
+          ifoodMerchantConfig?.name ||
+          (delivery as any).ifoodMerchantName ||
+          null,
+        ifoodMerchantLocation: ifoodMerchantConfig?.pickupAddress || null,
         source: (delivery as any).source ?? null,
         externalOrderId: (delivery as any).externalOrderId ?? null,
         anotaAiOrderId: (delivery as any).anotaAiOrderId ?? null,
