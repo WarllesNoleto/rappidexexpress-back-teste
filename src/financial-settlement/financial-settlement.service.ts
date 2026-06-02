@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -45,6 +46,8 @@ type SettlementData = {
 
 @Injectable()
 export class FinancialSettlementService {
+  private readonly logger = new Logger(FinancialSettlementService.name);
+
   constructor(
     @InjectRepository(DeliveryEntity)
     private readonly deliveryRepository: MongoRepository<DeliveryEntity>,
@@ -68,6 +71,12 @@ export class FinancialSettlementService {
   async sendWhatsapp(query: FinancialSettlementQueryDto) {
     const settlement = await this.buildSettlement(query);
     const pdfBuffer = this.createPdfBuffer(settlement);
+
+    if (!pdfBuffer?.length) {
+      throw new BadRequestException('PDF do fechamento não foi gerado.');
+    }
+
+    this.logWhatsappContext(settlement, pdfBuffer);
 
     const history = await this.historyRepository.save({
       establishmentId: settlement.establishment.id,
@@ -96,6 +105,7 @@ export class FinancialSettlementService {
         filename: settlement.filename,
         token: settlement.whatsappCloudToken,
         phoneNumberId: settlement.whatsappPhoneNumberId,
+        useCityConfigOnly: true,
       });
 
       await this.historyRepository.save({
@@ -121,6 +131,8 @@ export class FinancialSettlementService {
           error?.message ||
           'Erro desconhecido ao enviar WhatsApp.',
       });
+
+      this.logMetaError(error);
       throw error;
     }
   }
@@ -136,11 +148,9 @@ export class FinancialSettlementService {
       throw new NotFoundException('Lojista não encontrado.');
     }
 
-    const whatsapp = this.sanitizeWhatsapp(establishment.phone);
+    const whatsapp = this.normalizeWhatsapp(establishment.phone);
     if (!whatsapp) {
-      throw new BadRequestException(
-        'Este lojista não possui WhatsApp cadastrado no perfil.',
-      );
+      throw new BadRequestException('WhatsApp do lojista não cadastrado.');
     }
 
     const deliveries = await this.deliveryRepository.find({
@@ -164,7 +174,9 @@ export class FinancialSettlementService {
 
     const city = await this.resolveCity(deliveries[0], establishment);
     if (!city) {
-      throw new BadRequestException('Cidade não encontrada para este fechamento.');
+      throw new BadRequestException(
+        'Cidade não encontrada para este fechamento.',
+      );
     }
 
     const deliveryFeeValue = this.getDeliveryFeeValue(city);
@@ -176,11 +188,13 @@ export class FinancialSettlementService {
 
     const pixKey = String(city.pixKey ?? '').trim();
     if (!pixKey) {
-      throw new BadRequestException('Chave PIX não configurada para esta cidade.');
+      throw new BadRequestException(
+        'Chave PIX não configurada para esta cidade.',
+      );
     }
 
     const whatsappConfig = this.resolveWhatsappConfig(city);
-    const adminWhatsapp = this.sanitizeWhatsapp(city.adminWhatsapp);
+    const adminWhatsapp = this.normalizeWhatsapp(city.adminWhatsapp);
 
     const total = deliveries.length * deliveryFeeValue;
     const filename = this.buildFilename(
@@ -219,19 +233,32 @@ export class FinancialSettlementService {
   }
 
   private resolveWhatsappConfig(city: CityEntity) {
-    try {
-      return this.whatsappService.resolveDocumentMessageConfig({
-        token: city.whatsappCloudToken,
-        phoneNumberId: city.whatsappPhoneNumberId,
-      });
-    } catch {
+    const token = String(city.whatsappCloudToken ?? '').trim();
+    const phoneNumberId = String(city.whatsappPhoneNumberId ?? '').trim();
+
+    if (!token) {
       throw new BadRequestException(
-        'WhatsApp da cidade não configurado. Configure token e Phone Number ID na tela de Cidades.',
+        'Token da WhatsApp Cloud API não configurado para esta cidade.',
       );
     }
+
+    if (!phoneNumberId) {
+      throw new BadRequestException(
+        'Phone Number ID da cidade não configurado.',
+      );
+    }
+
+    return this.whatsappService.resolveDocumentMessageConfig({
+      token,
+      phoneNumberId,
+      useCityConfigOnly: true,
+    });
   }
 
-  private async resolveCity(delivery: DeliveryEntity, establishment: UserEntity) {
+  private async resolveCity(
+    delivery: DeliveryEntity,
+    establishment: UserEntity,
+  ) {
     const deliveryCityId = String((delivery as any).cityId ?? '').trim();
     if (deliveryCityId) {
       const byDelivery = await this.findCityById(deliveryCityId);
@@ -248,7 +275,10 @@ export class FinancialSettlementService {
         name: new RegExp(`^${this.escapeRegExp(delivery.addressCity)}$`, 'i'),
       };
       if (delivery.addressState) {
-        where.state = new RegExp(`^${this.escapeRegExp(delivery.addressState)}$`, 'i');
+        where.state = new RegExp(
+          `^${this.escapeRegExp(delivery.addressState)}$`,
+          'i',
+        );
       }
       return this.cityRepository.findOne({ where });
     }
@@ -325,7 +355,9 @@ export class FinancialSettlementService {
       return objects.length;
     };
 
-    const fontId = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+    const fontId = addObject(
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    );
     const pageIds: number[] = [];
     const contentIds: number[] = [];
 
@@ -335,10 +367,12 @@ export class FinancialSettlementService {
         '/F1 12 Tf',
         '50 790 Td',
         '16 TL',
-        ...pageLines.flatMap((line, index) => [
-          index === 0 ? '' : 'T*',
-          `(${this.escapePdfText(line)}) Tj`,
-        ]).filter(Boolean),
+        ...pageLines
+          .flatMap((line, index) => [
+            index === 0 ? '' : 'T*',
+            `(${this.escapePdfText(line)}) Tj`,
+          ])
+          .filter(Boolean),
         'ET',
       ].join('\n');
 
@@ -382,7 +416,9 @@ export class FinancialSettlementService {
   }
 
   private parsePeriodDate(value: string, endOfDay: boolean) {
-    const base = value.includes('T') ? new Date(value) : new Date(`${value}T00:00:00.000Z`);
+    const base = value.includes('T')
+      ? new Date(value)
+      : new Date(`${value}T00:00:00.000Z`);
     if (Number.isNaN(base.getTime())) {
       throw new BadRequestException('Período do fechamento inválido.');
     }
@@ -402,10 +438,37 @@ export class FinancialSettlementService {
     return `fechamento-${slug || 'lojista'}-${this.formatDateForFile(start)}-a-${this.formatDateForFile(end)}.pdf`;
   }
 
-  private sanitizeWhatsapp(phone?: string) {
-    const digits = String(phone ?? '').replace(/\D/g, '');
+  private normalizeWhatsapp(phone?: string) {
+    const digits = String(phone ?? '')
+      .trim()
+      .replace(/[\s()+-]/g, '')
+      .replace(/\D/g, '');
+
     if (!digits) return '';
+
     return digits.startsWith('55') ? digits : `55${digits}`;
+  }
+
+  private logWhatsappContext(settlement: SettlementData, pdfBuffer: Buffer) {
+    this.logger.log(
+      JSON.stringify({
+        message: 'Enviando fechamento financeiro pelo WhatsApp',
+        cityId: settlement.city.id?.toHexString?.() ?? `${settlement.city.id}`,
+        cityName: this.formatCity(settlement.city),
+        phoneNumberId: settlement.whatsappPhoneNumberId,
+        destinationPhone: settlement.whatsapp,
+        hasTokenConfigured: Boolean(settlement.whatsappCloudToken),
+        hasPdf: Boolean(pdfBuffer?.length),
+        pdfBytes: pdfBuffer?.length ?? 0,
+      }),
+    );
+  }
+
+  private logMetaError(error: any) {
+    const response = error?.response ?? error?.getResponse?.();
+    this.logger.error(
+      `Resposta completa da Meta/WhatsApp Cloud API em caso de erro: ${JSON.stringify(response)}`,
+    );
   }
 
   private formatCity(city: CityEntity) {
