@@ -67,11 +67,7 @@ export class UserService {
     const salt = await bcrypt.genSalt();
     const passHash = await bcrypt.hash(data.password, salt);
 
-    const phone = data.phone
-      .replace('(', '')
-      .replace(')', '')
-      .replace('-', '')
-      .replace(' ', '');
+    const phone = this.normalizePhone(data.phone);
 
     const city = await this.resolveCity(data.cityId, requester);
     const useIfoodIntegration = Boolean(data.useIfoodIntegration);
@@ -224,11 +220,16 @@ export class UserService {
       const ifoodMerchants = this.normalizeIfoodMerchants(
         data.ifoodMerchants ?? userToUpdate.ifoodMerchants,
       );
+      const phone =
+        data.phone !== undefined
+          ? this.normalizePhone(data.phone) || userToUpdate.phone
+          : userToUpdate.phone;
 
       const changedUser = await this.userRepository.save({
         ...userToUpdate,
         ...data,
         cityId,
+        phone,
         useIfoodIntegration,
         usesExternalIfoodPdv,
         ifoodMerchantId,
@@ -262,6 +263,10 @@ export class UserService {
     } catch (error) {
       throw error;
     }
+  }
+
+  private normalizePhone(phone?: string) {
+    return String(phone ?? '').replace(/\D/g, '');
   }
 
   private triggerIfoodInitialSync(
