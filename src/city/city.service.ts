@@ -44,6 +44,9 @@ export class CityService {
         data.deliveryFeeValue ?? data.deliveryValue,
       ),
       pixKey: data.pixKey?.trim() || '',
+      adminWhatsapp: data.adminWhatsapp?.trim() || '',
+      whatsappPhoneNumberId: data.whatsappPhoneNumberId?.trim() || '',
+      whatsappCloudToken: data.whatsappCloudToken?.trim() || '',
     });
 
     return CityResult.fromEntity(city);
@@ -89,6 +92,18 @@ export class CityService {
           : city.deliveryFeeValue,
       pixKey:
         data.pixKey !== undefined ? data.pixKey.trim() : city.pixKey,
+      adminWhatsapp:
+        data.adminWhatsapp !== undefined
+          ? data.adminWhatsapp.trim()
+          : city.adminWhatsapp,
+      whatsappPhoneNumberId:
+        data.whatsappPhoneNumberId !== undefined
+          ? data.whatsappPhoneNumberId.trim()
+          : city.whatsappPhoneNumberId,
+      whatsappCloudToken:
+        data.whatsappCloudToken !== undefined && data.whatsappCloudToken.trim()
+          ? data.whatsappCloudToken.trim()
+          : city.whatsappCloudToken,
     });
 
     return CityResult.fromEntity(updatedCity);

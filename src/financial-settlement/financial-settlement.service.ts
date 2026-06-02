@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ObjectId } from 'mongodb';
 import { MongoRepository } from 'typeorm';
@@ -38,6 +39,9 @@ type SettlementData = {
   whatsapp: string;
   filename: string;
   message: string;
+  adminWhatsapp: string;
+  whatsappPhoneNumberId: string;
+  whatsappCloudToken: string;
 };
 
 @Injectable()
@@ -52,6 +56,7 @@ export class FinancialSettlementService {
     @InjectRepository(FinancialSettlementHistoryEntity)
     private readonly historyRepository: MongoRepository<FinancialSettlementHistoryEntity>,
     private readonly whatsappService: WhatsappService,
+    private readonly configService: ConfigService,
   ) {}
 
   async generatePdf(query: FinancialSettlementQueryDto) {
@@ -78,6 +83,8 @@ export class FinancialSettlementService {
       total: settlement.total,
       pixKey: settlement.pixKey,
       whatsappPhone: settlement.whatsapp,
+      adminWhatsapp: settlement.adminWhatsapp,
+      whatsappPhoneNumberId: settlement.whatsappPhoneNumberId,
       filename: settlement.filename,
       sentAt: new Date(),
       status: 'pendente',
@@ -89,6 +96,8 @@ export class FinancialSettlementService {
         message: settlement.message,
         pdfBuffer,
         filename: settlement.filename,
+        token: settlement.whatsappCloudToken,
+        phoneNumberId: settlement.whatsappPhoneNumberId,
       });
 
       await this.historyRepository.save({
@@ -199,7 +208,16 @@ export class FinancialSettlementService {
       whatsapp,
       filename,
       message: '',
+      adminWhatsapp: this.sanitizeWhatsapp(city.adminWhatsapp),
+      whatsappPhoneNumberId: this.resolveWhatsappPhoneNumberId(city),
+      whatsappCloudToken: this.resolveWhatsappCloudToken(city),
     };
+    if (!settlement.whatsappPhoneNumberId || !settlement.whatsappCloudToken) {
+      throw new BadRequestException(
+        'WhatsApp da cidade não configurado. Configure o token e o Phone Number ID na tela de Cidades.',
+      );
+    }
+
     settlement.message = this.buildWhatsappMessage(settlement);
 
     return settlement;
@@ -240,6 +258,22 @@ export class FinancialSettlementService {
     }
   }
 
+  private resolveWhatsappPhoneNumberId(city: CityEntity) {
+    return (
+      String(city.whatsappPhoneNumberId ?? '').trim() ||
+      this.configService.get<string>('WHATSAPP_PHONE_NUMBER_ID')?.trim() ||
+      ''
+    );
+  }
+
+  private resolveWhatsappCloudToken(city: CityEntity) {
+    return (
+      String(city.whatsappCloudToken ?? '').trim() ||
+      this.configService.get<string>('WHATSAPP_CLOUD_TOKEN')?.trim() ||
+      ''
+    );
+  }
+
   private getDeliveryFeeValue(city: CityEntity) {
     if (typeof city.deliveryFeeValue === 'number') {
       return city.deliveryFeeValue;
@@ -256,7 +290,7 @@ export class FinancialSettlementService {
   }
 
   private buildWhatsappMessage(settlement: SettlementData) {
-    return `Olá, ${settlement.establishment.name}!\n\nSegue em anexo o fechamento das entregas realizadas pela Rappidex Express.\n\nPeríodo: ${this.formatDate(settlement.periodStart)} até ${this.formatDate(settlement.periodEnd)}\nQuantidade de entregas: ${settlement.deliveries.length}\nValor por entrega: ${this.formatCurrency(settlement.deliveryFeeValue)}\nTotal a pagar: ${this.formatCurrency(settlement.total)}\n\nChave PIX para pagamento:\n${settlement.pixKey}\n\nObrigado pela parceria!\nRappidex Express`;
+    return `Olá, ${settlement.establishment.name}!\n\nSegue em anexo o fechamento das entregas realizadas pela Rappidex Express.\n\nCidade: ${this.formatCity(settlement.city)}\nPeríodo: ${this.formatDate(settlement.periodStart)} até ${this.formatDate(settlement.periodEnd)}\nQuantidade de entregas: ${settlement.deliveries.length}\nValor por entrega: ${this.formatCurrency(settlement.deliveryFeeValue)}\nTotal a pagar: ${this.formatCurrency(settlement.total)}\n\nChave PIX para pagamento:\n${settlement.pixKey}\n\nObrigado pela parceria!\nRappidex Express`;
   }
 
   private createPdfBuffer(settlement: SettlementData) {
@@ -266,7 +300,10 @@ export class FinancialSettlementService {
       '',
       `Empresa: ${settlement.establishment.name}`,
       `Cidade: ${this.formatCity(settlement.city)}`,
-      `WhatsApp: ${this.formatPhone(settlement.whatsapp)}`,
+      `WhatsApp do lojista: ${this.formatPhone(settlement.whatsapp)}`,
+      ...(settlement.adminWhatsapp
+        ? [`WhatsApp admin responsável: ${this.formatPhone(settlement.adminWhatsapp)}`]
+        : []),
       `Período: ${this.formatDate(settlement.periodStart)} até ${this.formatDate(settlement.periodEnd)}`,
       `Data de geração: ${settlement.generatedAt.toLocaleString('pt-BR')}`,
       '',

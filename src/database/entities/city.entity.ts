@@ -23,4 +23,13 @@ export class CityEntity {
 
   @Column({ nullable: true })
   pixKey?: string;
+
+  @Column({ nullable: true })
+  adminWhatsapp?: string;
+
+  @Column({ nullable: true })
+  whatsappPhoneNumberId?: string;
+
+  @Column({ nullable: true })
+  whatsappCloudToken?: string;
 }

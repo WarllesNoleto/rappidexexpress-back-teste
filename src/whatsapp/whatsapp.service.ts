@@ -7,6 +7,8 @@ export interface SendDocumentMessageInput {
   message: string;
   pdfBuffer: Buffer;
   filename: string;
+  token?: string;
+  phoneNumberId?: string;
 }
 
 @Injectable()
@@ -18,17 +20,20 @@ export class WhatsappService {
     message,
     pdfBuffer,
     filename,
+    token: cityToken,
+    phoneNumberId: cityPhoneNumberId,
   }: SendDocumentMessageInput) {
-    const token = this.configService.get<string>('WHATSAPP_CLOUD_TOKEN');
-    const phoneNumberId = this.configService.get<string>(
-      'WHATSAPP_PHONE_NUMBER_ID',
-    );
+    const token =
+      cityToken?.trim() || this.configService.get<string>('WHATSAPP_CLOUD_TOKEN');
+    const phoneNumberId =
+      cityPhoneNumberId?.trim() ||
+      this.configService.get<string>('WHATSAPP_PHONE_NUMBER_ID');
     const apiVersion =
       this.configService.get<string>('WHATSAPP_CLOUD_API_VERSION') || 'v20.0';
 
     if (!token || !phoneNumberId) {
       throw new InternalServerErrorException(
-        'API de WhatsApp não configurada. Defina WHATSAPP_CLOUD_TOKEN e WHATSAPP_PHONE_NUMBER_ID.',
+        'WhatsApp da cidade não configurado. Configure o token e o Phone Number ID na tela de Cidades.',
       );
     }
 
