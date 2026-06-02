@@ -20,6 +20,7 @@ import { FinancialSettlementQueryDto } from './dto';
 type SettlementDelivery = {
   orderId: string;
   clientName: string;
+  motoboyName: string;
   status: string;
   createdAt?: Date;
   finishedAt?: Date;
@@ -27,6 +28,7 @@ type SettlementDelivery = {
 
 type SettlementData = {
   establishment: UserEntity;
+  establishmentName: string;
   city: CityEntity;
   periodStart: Date;
   periodEnd: Date;
@@ -71,11 +73,17 @@ export class FinancialSettlementService {
       throw new BadRequestException('PDF do fechamento não foi gerado.');
     }
 
+    if (!settlement.whatsapp) {
+      throw new BadRequestException(
+        'Este lojista não possui WhatsApp cadastrado no perfil.',
+      );
+    }
+
     this.logWhatsappContext(settlement, pdfBuffer);
 
     await this.historyRepository.save({
       establishmentId: settlement.establishment.id,
-      establishmentName: settlement.establishment.name,
+      establishmentName: settlement.establishmentName,
       cityId: settlement.city.id?.toHexString?.() ?? `${settlement.city.id}`,
       cityName: this.formatCity(settlement.city),
       periodStart: settlement.periodStart,
@@ -108,6 +116,12 @@ export class FinancialSettlementService {
   private async buildSettlement(query: FinancialSettlementQueryDto) {
     const periodStart = this.parsePeriodDate(query.createdIn, false);
     const periodEnd = this.parsePeriodDate(query.createdUntil, true);
+    if (!query.establishmentId) {
+      throw new BadRequestException(
+        'Selecione um estabelecimento para gerar o fechamento.',
+      );
+    }
+
     const establishment = await this.userRepository.findOneBy({
       id: query.establishmentId,
     });
@@ -117,11 +131,6 @@ export class FinancialSettlementService {
     }
 
     const whatsapp = this.normalizeWhatsapp(establishment.phone);
-    if (!whatsapp) {
-      throw new BadRequestException(
-        'Este lojista não possui WhatsApp cadastrado no perfil.',
-      );
-    }
 
     const deliveries = await this.deliveryRepository.find({
       where: {
@@ -164,10 +173,17 @@ export class FinancialSettlementService {
     }
 
     const total = deliveries.length * deliveryFeeValue;
-    const filename = this.buildFilename(establishment.name);
+    const establishmentName = this.resolveEstablishmentName(
+      establishment,
+      deliveries[0],
+    );
+    const filename = this.buildFilename(establishmentName);
     const settlementDeliveries = deliveries.map((delivery) => ({
-      orderId: delivery.ifoodDisplayId || delivery.ifoodOrderId || delivery.id,
+      orderId: String(
+        delivery.ifoodDisplayId || delivery.ifoodOrderId || delivery.id,
+      ),
       clientName: delivery.clientName,
+      motoboyName: delivery.motoboy?.name || 'Não informado',
       status: delivery.status,
       createdAt: delivery.createdAt,
       finishedAt: delivery.finishedAt,
@@ -175,6 +191,7 @@ export class FinancialSettlementService {
 
     const settlement: SettlementData = {
       establishment,
+      establishmentName,
       city,
       periodStart,
       periodEnd,
@@ -234,85 +251,59 @@ export class FinancialSettlementService {
   }
 
   private getDeliveryFeeValue(city: CityEntity) {
-    if (typeof city.deliveryFeeValue === 'number') {
-      return city.deliveryFeeValue;
-    }
-
-    const legacyValue = String(city.deliveryValue ?? '').trim();
-    if (!legacyValue) return 0;
-
-    const normalized = legacyValue.includes(',')
-      ? legacyValue.replace(/\./g, '').replace(',', '.')
-      : legacyValue;
-    const parsed = Number(normalized);
-    return Number.isFinite(parsed) ? parsed : 0;
+    const deliveryFeeValue = Number(city.deliveryFeeValue);
+    return Number.isFinite(deliveryFeeValue) ? deliveryFeeValue : 0;
   }
 
   private buildWhatsappMessage(settlement: SettlementData) {
-    return `Olá, ${settlement.establishment.name}!\n\nSegue o fechamento das entregas realizadas pela Rappidex Express.\n\nCidade: ${this.formatCity(settlement.city)}\nPeríodo: ${this.formatDate(settlement.periodStart)} até ${this.formatDate(settlement.periodEnd)}\nQuantidade de entregas: ${settlement.deliveries.length}\nValor por entrega: ${this.formatCurrency(settlement.deliveryFeeValue)}\nTotal a pagar: ${this.formatCurrency(settlement.total)}\n\nChave PIX para pagamento:\n${settlement.pixKey}\n\nO relatório em PDF foi gerado. Anexarei o arquivo nesta conversa.\n\nObrigado pela parceria!\nRappidex Express`;
+    return `Olá, ${settlement.establishmentName}!\n\nSegue o fechamento das entregas realizadas pela Rappidex Express.\n\nCidade: ${this.formatCity(settlement.city)}\nPeríodo: ${this.formatDate(settlement.periodStart)} até ${this.formatDate(settlement.periodEnd)}\nQuantidade de entregas: ${settlement.deliveries.length}\nValor por entrega: ${this.formatCurrency(settlement.deliveryFeeValue)}\nTotal a pagar: ${this.formatCurrency(settlement.total)}\n\nChave PIX para pagamento:\n${settlement.pixKey}\n\nO relatório em PDF foi gerado. Anexarei o arquivo nesta conversa.\n\nObrigado pela parceria!\nRappidex Express`;
   }
 
   private createPdfBuffer(settlement: SettlementData) {
-    const lines = [
-      'RAPPIDEX EXPRESS',
-      'Fechamento de entregas',
-      '',
-      `Empresa: ${settlement.establishment.name}`,
-      `Cidade: ${this.formatCity(settlement.city)}`,
-      `WhatsApp: ${this.formatPhone(settlement.whatsapp)}`,
-      `Período: ${this.formatDate(settlement.periodStart)} até ${this.formatDate(settlement.periodEnd)}`,
-      `Data de geração: ${settlement.generatedAt.toLocaleString('pt-BR')}`,
-      '',
-      `Quantidade de entregas: ${settlement.deliveries.length}`,
-      `Valor por entrega: ${this.formatCurrency(settlement.deliveryFeeValue)}`,
-      `Total a pagar: ${this.formatCurrency(settlement.total)}`,
-      '',
-      'Chave PIX para pagamento:',
-      settlement.pixKey,
-      '',
-      'Entregas:',
-      ...settlement.deliveries.map(
-        (delivery) =>
-          `Pedido #${delivery.orderId} | Cliente ${delivery.clientName || 'Não informado'} | Status ${delivery.status}`,
-      ),
-    ];
+    const rows = settlement.deliveries;
+    const firstPageRows = 12;
+    const nextPageRows = 22;
+    const pages: SettlementDelivery[][] = [];
 
-    return this.renderSimplePdf(lines);
-  }
-
-  private renderSimplePdf(lines: string[]) {
-    const pages: string[][] = [];
-    for (let index = 0; index < lines.length; index += 38) {
-      pages.push(lines.slice(index, index + 38));
+    pages.push(rows.slice(0, firstPageRows));
+    for (
+      let index = firstPageRows;
+      index < rows.length;
+      index += nextPageRows
+    ) {
+      pages.push(rows.slice(index, index + nextPageRows));
     }
 
+    return this.renderSettlementPdf(settlement, pages);
+  }
+
+  private renderSettlementPdf(
+    settlement: SettlementData,
+    pages: SettlementDelivery[][],
+  ) {
     const objects: string[] = [];
     const addObject = (content: string) => {
       objects.push(content);
       return objects.length;
     };
 
-    const fontId = addObject(
-      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    const regularFontId = addObject(
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
+    );
+    const boldFontId = addObject(
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
     );
     const pageIds: number[] = [];
     const contentIds: number[] = [];
 
-    pages.forEach((pageLines) => {
-      const content = [
-        'BT',
-        '/F1 12 Tf',
-        '50 790 Td',
-        '16 TL',
-        ...pageLines
-          .flatMap((line, index) => [
-            index === 0 ? '' : 'T*',
-            `(${this.escapePdfText(line)}) Tj`,
-          ])
-          .filter(Boolean),
-        'ET',
-      ].join('\n');
-
+    pages.forEach((pageRows, pageIndex) => {
+      const operators = this.buildSettlementPageOperators(
+        settlement,
+        pageRows,
+        pageIndex + 1,
+        pages.length,
+      );
+      const content = operators.join('\n');
       const contentId = addObject(
         `<< /Length ${Buffer.byteLength(content, 'latin1')} >>\nstream\n${content}\nendstream`,
       );
@@ -323,7 +314,7 @@ export class FinancialSettlementService {
     const pagesIdPlaceholder = objects.length + pages.length + 1;
     pages.forEach((_, index) => {
       const pageId = addObject(
-        `<< /Type /Page /Parent ${pagesIdPlaceholder} 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${contentIds[index]} 0 R >>`,
+        `<< /Type /Page /Parent ${pagesIdPlaceholder} 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${regularFontId} 0 R /F2 ${boldFontId} 0 R >> >> /Contents ${contentIds[index]} 0 R >>`,
       );
       pageIds[index] = pageId;
     });
@@ -352,7 +343,172 @@ export class FinancialSettlementService {
     return Buffer.from(chunks.join(''), 'latin1');
   }
 
+  private buildSettlementPageOperators(
+    settlement: SettlementData,
+    rows: SettlementDelivery[],
+    pageNumber: number,
+    totalPages: number,
+  ) {
+    const ops: string[] = [];
+    const yellow = '0.992 0.729 0.000';
+    const red = '0.898 0.137 0.137';
+    const dark = '0.067 0.067 0.067';
+    const gray = '0.400 0.400 0.400';
+    const lightGray = '0.965 0.965 0.965';
+    const border = '0.870 0.870 0.870';
+
+    const rect = (
+      x: number,
+      y: number,
+      w: number,
+      h: number,
+      color: string,
+    ) => {
+      ops.push(`q ${color} rg ${x} ${y} ${w} ${h} re f Q`);
+    };
+    const strokeRect = (
+      x: number,
+      y: number,
+      w: number,
+      h: number,
+      color = border,
+    ) => {
+      ops.push(`q ${color} RG 0.8 w ${x} ${y} ${w} ${h} re S Q`);
+    };
+    const text = (
+      value: string,
+      x: number,
+      y: number,
+      size = 10,
+      font: 'F1' | 'F2' = 'F1',
+      color = dark,
+    ) => {
+      ops.push(
+        `BT ${color} rg /${font} ${size} Tf ${x} ${y} Td (${this.escapePdfText(value)}) Tj ET`,
+      );
+    };
+
+    rect(0, 792, 595, 50, yellow);
+    rect(0, 782, 595, 10, red);
+    text('Rappidex Express', 40, 812, 18, 'F2', dark);
+    text('Relatório de Fechamento', 360, 815, 15, 'F2', dark);
+    text('Fechamento de entregas do período', 360, 798, 9, 'F1', dark);
+    text(
+      `Gerado em ${settlement.generatedAt.toLocaleString('pt-BR', { timeZone: 'UTC' })}`,
+      40,
+      770,
+      9,
+      'F1',
+      gray,
+    );
+
+    let tableY = 706;
+    if (pageNumber === 1) {
+      rect(35, 648, 525, 100, '1 1 1');
+      strokeRect(35, 648, 525, 100);
+      rect(35, 730, 525, 18, lightGray);
+      text('Dados do lojista', 48, 735, 11, 'F2', dark);
+      text(
+        `Estabelecimento: ${settlement.establishmentName}`,
+        48,
+        710,
+        10,
+        'F2',
+      );
+      text(
+        `WhatsApp: ${settlement.whatsapp ? this.formatPhone(settlement.whatsapp) : 'Não cadastrado'}`,
+        48,
+        690,
+      );
+      text(`Cidade: ${this.formatCity(settlement.city)}`, 310, 710);
+      text(
+        `Período: ${this.formatDate(settlement.periodStart)} até ${this.formatDate(settlement.periodEnd)}`,
+        310,
+        690,
+      );
+
+      const cards = [
+        ['Entregas finalizadas', String(settlement.deliveries.length)],
+        ['Valor por entrega', this.formatCurrency(settlement.deliveryFeeValue)],
+        ['Total a pagar', this.formatCurrency(settlement.total)],
+        ['Chave PIX', settlement.pixKey],
+      ];
+      cards.forEach(([label, value], index) => {
+        const x = 35 + index * 132;
+        rect(x, 570, 125, 58, index === 2 ? yellow : lightGray);
+        strokeRect(x, 570, 125, 58);
+        text(label, x + 10, 608, 8, 'F2', index === 2 ? dark : gray);
+        text(
+          this.truncate(value, 23),
+          x + 10,
+          586,
+          index === 2 ? 13 : 11,
+          'F2',
+          dark,
+        );
+      });
+
+      rect(35, 535, 525, 20, dark);
+      text('Lista de entregas', 48, 542, 11, 'F2', '1 1 1');
+      tableY = 506;
+    } else {
+      text('Lista de entregas (continuação)', 40, 744, 12, 'F2', dark);
+      tableY = 716;
+    }
+
+    const headers = ['Pedido', 'Cliente', 'Data/Hora', 'Motoboy', 'Status'];
+    const widths = [80, 145, 90, 115, 95];
+    const startX = 35;
+    const rowHeight = 24;
+    rect(startX, tableY, 525, rowHeight, dark);
+    let currentX = startX;
+    headers.forEach((header, index) => {
+      text(header, currentX + 6, tableY + 8, 8, 'F2', '1 1 1');
+      currentX += widths[index];
+    });
+
+    rows.forEach((delivery, rowIndex) => {
+      const y = tableY - (rowIndex + 1) * rowHeight;
+      rect(startX, y, 525, rowHeight, rowIndex % 2 === 0 ? '1 1 1' : lightGray);
+      strokeRect(startX, y, 525, rowHeight);
+      const values = [
+        `#${delivery.orderId}`,
+        delivery.clientName || 'Não informado',
+        this.formatDateTime(delivery.finishedAt || delivery.createdAt),
+        delivery.motoboyName,
+        delivery.status,
+      ];
+      currentX = startX;
+      values.forEach((value, index) => {
+        text(
+          this.truncate(value, index === 1 ? 24 : 17),
+          currentX + 6,
+          y + 8,
+          8,
+        );
+        currentX += widths[index];
+      });
+    });
+
+    rect(0, 0, 595, 36, lightGray);
+    text(
+      'Rappidex Express - Relatório gerado automaticamente',
+      35,
+      14,
+      9,
+      'F1',
+      gray,
+    );
+    text(`Página ${pageNumber} de ${totalPages}`, 500, 14, 9, 'F2', gray);
+
+    return ops;
+  }
+
   private parsePeriodDate(value: string, endOfDay: boolean) {
+    if (!value) {
+      throw new BadRequestException('Período do fechamento inválido.');
+    }
+
     const base = value.includes('T')
       ? new Date(value)
       : new Date(`${value}T00:00:00.000Z`);
@@ -366,13 +522,36 @@ export class FinancialSettlementService {
   }
 
   private buildFilename(establishmentName: string) {
-    const slug = establishmentName
+    const slug = this.slugifyFileName(establishmentName);
+    return `relatorio_de_fechamento_${slug || 'estabelecimento'}.pdf`;
+  }
+
+  private slugifyFileName(value: string) {
+    return String(value ?? '')
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-zA-Z0-9]+/g, '_')
-      .replace(/^_+|_+$/g, '')
-      .toLowerCase();
-    return `relatorio_de_fechamento_${slug || 'lojista'}.pdf`;
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '');
+  }
+
+  private resolveEstablishmentName(
+    establishment: UserEntity,
+    delivery?: DeliveryEntity,
+  ) {
+    const candidates = [
+      establishment.name,
+      delivery?.establishment?.name,
+      establishment.user,
+      'estabelecimento',
+    ];
+
+    return (
+      candidates
+        .map((candidate) => String(candidate ?? '').trim())
+        .find(Boolean) ?? 'estabelecimento'
+    );
   }
 
   private normalizeWhatsapp(phone?: string) {
@@ -422,15 +601,32 @@ export class FinancialSettlementService {
     return date.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
   }
 
+  private formatDateTime(date?: Date) {
+    if (!date) return 'Não informado';
+
+    return date.toLocaleString('pt-BR', {
+      timeZone: 'UTC',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
   private formatPhone(phone: string) {
     return phone.replace(/^(55)(\d{2})(\d{4,5})(\d{4})$/, '+$1 ($2) $3-$4');
   }
 
+  private truncate(value: string, maxLength: number) {
+    if (value.length <= maxLength) return value;
+    return `${value.slice(0, Math.max(maxLength - 3, 0))}...`;
+  }
+
   private escapePdfText(value: string) {
-    return value
-      .normalize('NFKD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^\x20-\x7E]/g, '')
+    return String(value ?? '')
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+      .replace(/[^\x20-\xFF]/g, '')
       .replace(/\\/g, '\\\\')
       .replace(/\(/g, '\\(')
       .replace(/\)/g, '\\)');
