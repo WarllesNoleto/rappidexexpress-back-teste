@@ -1,4 +1,4 @@
-import { IsOptional, IsString, Length } from 'class-validator';
+import { IsNumber, IsOptional, IsString, Length } from 'class-validator';
 
 export class UpdateCityDto {
   @IsString()
@@ -17,4 +17,12 @@ export class UpdateCityDto {
   @IsString()
   @IsOptional()
   deliveryValue?: string;
+
+  @IsNumber()
+  @IsOptional()
+  deliveryFeeValue?: number;
+
+  @IsString()
+  @IsOptional()
+  pixKey?: string;
 }

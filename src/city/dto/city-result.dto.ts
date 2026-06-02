@@ -17,6 +17,12 @@ export class CityResult {
   @Expose()
   deliveryValue?: string;
 
+  @Expose()
+  deliveryFeeValue?: number;
+
+  @Expose()
+  pixKey?: string;
+
   static fromEntity(city: CityEntity): CityResult {
     return plainToClass(CityResult, {
       id: city.id?.toHexString?.() ?? `${city.id}`,
@@ -24,6 +30,8 @@ export class CityResult {
       state: city.state,
       clientWhatsappMessage: city.clientWhatsappMessage,
       deliveryValue: city.deliveryValue,
+      deliveryFeeValue: city.deliveryFeeValue,
+      pixKey: city.pixKey,
     });
   }
 }

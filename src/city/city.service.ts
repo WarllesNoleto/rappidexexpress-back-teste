@@ -13,6 +13,20 @@ export class CityService {
     private readonly cityRepository: MongoRepository<CityEntity>,
   ) {}
 
+
+  private normalizeDeliveryFeeValue(value?: number | string): number | undefined {
+    if (value === undefined || value === null || value === '') {
+      return undefined;
+    }
+
+    const normalized = String(value).includes(',')
+      ? String(value).replace(/\./g, '').replace(',', '.')
+      : String(value);
+    const parsed = Number(normalized);
+
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
   async listCities(): Promise<CityResult[]> {
     const cities = await this.cityRepository.find({
       order: { name: 'ASC' },
@@ -26,6 +40,10 @@ export class CityService {
       state: data.state,
       clientWhatsappMessage: data.clientWhatsappMessage?.trim() || '',
       deliveryValue: data.deliveryValue?.trim() || '',
+      deliveryFeeValue: this.normalizeDeliveryFeeValue(
+        data.deliveryFeeValue ?? data.deliveryValue,
+      ),
+      pixKey: data.pixKey?.trim() || '',
     });
 
     return CityResult.fromEntity(city);
@@ -63,6 +81,14 @@ export class CityService {
         data.deliveryValue !== undefined
           ? data.deliveryValue.trim()
           : city.deliveryValue,
+      deliveryFeeValue:
+        data.deliveryFeeValue !== undefined || data.deliveryValue !== undefined
+          ? this.normalizeDeliveryFeeValue(
+              data.deliveryFeeValue ?? data.deliveryValue,
+            )
+          : city.deliveryFeeValue,
+      pixKey:
+        data.pixKey !== undefined ? data.pixKey.trim() : city.pixKey,
     });
 
     return CityResult.fromEntity(updatedCity);
