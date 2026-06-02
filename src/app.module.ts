@@ -8,8 +8,6 @@ import { AuthenticatorModule } from './authenticator/authenticator.module';
 import { DeliveryModule } from './delivery/delivery.module';
 import { CityModule } from './city/city.module';
 import { IfoodModule } from './ifood/ifood.module';
-import { AnotaAiModule } from './modules/anota-ai/anota-ai.module';
-import { SaiposModule } from './saipos/saipos.module';
 
 @Module({
   imports: [
@@ -22,8 +20,6 @@ import { SaiposModule } from './saipos/saipos.module';
     DeliveryModule,
     CityModule,
     IfoodModule,
-    AnotaAiModule,
-    SaiposModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -1,13 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { IfoodImportService } from '../ifood/ifood-import.service';
 import { UserService } from './user.service';
-import {
-  CityEntity,
-  DeliveryEntity,
-  LogEntity,
-  UserEntity,
-} from '../database/entities';
+import { CityEntity, DeliveryEntity, LogEntity, UserEntity } from '../database/entities';
 
 describe('UserService', () => {
   let service: UserService;
@@ -41,15 +35,7 @@ describe('UserService', () => {
         {
           provide: getRepositoryToken(CityEntity),
           useValue: {
-            findOne: jest.fn(),
             findOneBy: jest.fn(),
-            find: jest.fn(),
-          },
-        },
-        {
-          provide: IfoodImportService,
-          useValue: {
-            retryPendingImportsForCompany: jest.fn(),
           },
         },
       ],

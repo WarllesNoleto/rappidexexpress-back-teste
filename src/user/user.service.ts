@@ -99,18 +99,6 @@ export class UserService {
         ifoodOrdersReleased: Number(data.ifoodOrdersReleased || 0),
         ifoodOrdersUsed: Number(data.ifoodOrdersUsed || 0),
         ifoodOrdersAvailable: Number(data.ifoodOrdersAvailable || 0),
-        anotaAiEnabled: Boolean(data.anotaAiEnabled),
-        anotaAiStoreId: data.anotaAiEnabled
-          ? String(data.anotaAiStoreId || '').trim()
-          : '',
-        anotaAiClientId: String(data.anotaAiClientId || '').trim(),
-        anotaAiClientSecret: String(data.anotaAiClientSecret || '').trim(),
-        anotaAiToken: this.normalizeAnotaAiToken(data.anotaAiToken),
-        anotaAiIgnoreIfoodOrders: data.anotaAiIgnoreIfoodOrders !== false,
-        saiposEnabled: Boolean(data.saiposEnabled),
-        saiposStoreId: String(data.saiposStoreId || '').trim(),
-        saiposMerchantId: String(data.saiposMerchantId || '').trim(),
-        saiposToken: this.normalizeSaiposToken(data.saiposToken),
         isActive: true,
         createdAt: addHours(new Date(), -3),
         updatedAt: addHours(new Date(), -3),
@@ -221,9 +209,7 @@ export class UserService {
       const useIfoodIntegration =
         data.useIfoodIntegration ?? userToUpdate.useIfoodIntegration ?? false;
       const usesExternalIfoodPdv = useIfoodIntegration
-        ? (data.usesExternalIfoodPdv ??
-          userToUpdate.usesExternalIfoodPdv ??
-          false)
+        ? (data.usesExternalIfoodPdv ?? userToUpdate.usesExternalIfoodPdv ?? false)
         : false;
 
       const ifoodMerchantId = useIfoodIntegration
@@ -237,11 +223,6 @@ export class UserService {
         : '';
       const ifoodMerchants = this.normalizeIfoodMerchants(
         data.ifoodMerchants ?? userToUpdate.ifoodMerchants,
-      );
-
-      const anotaAiToken = this.resolveUpdatedAnotaAiToken(
-        data.anotaAiToken,
-        userToUpdate.anotaAiToken,
       );
 
       const changedUser = await this.userRepository.save({
@@ -260,34 +241,6 @@ export class UserService {
           data.ifoodOrdersUsed ?? userToUpdate.ifoodOrdersUsed ?? 0,
         ifoodOrdersAvailable:
           data.ifoodOrdersAvailable ?? userToUpdate.ifoodOrdersAvailable ?? 0,
-        anotaAiEnabled:
-          data.anotaAiEnabled ?? userToUpdate.anotaAiEnabled ?? false,
-        anotaAiStoreId: String(
-          data.anotaAiStoreId ?? userToUpdate.anotaAiStoreId ?? '',
-        ).trim(),
-        anotaAiClientId: String(
-          data.anotaAiClientId ?? userToUpdate.anotaAiClientId ?? '',
-        ).trim(),
-        anotaAiClientSecret: String(
-          data.anotaAiClientSecret ?? userToUpdate.anotaAiClientSecret ?? '',
-        ).trim(),
-        anotaAiToken,
-        anotaAiIgnoreIfoodOrders:
-          data.anotaAiIgnoreIfoodOrders ??
-          userToUpdate.anotaAiIgnoreIfoodOrders ??
-          true,
-        saiposEnabled:
-          data.saiposEnabled ?? userToUpdate.saiposEnabled ?? false,
-        saiposStoreId: String(
-          data.saiposStoreId ?? userToUpdate.saiposStoreId ?? '',
-        ).trim(),
-        saiposMerchantId: String(
-          data.saiposMerchantId ?? userToUpdate.saiposMerchantId ?? '',
-        ).trim(),
-        saiposToken: this.resolveUpdatedSaiposToken(
-          data.saiposToken,
-          userToUpdate.saiposToken,
-        ),
         updatedAt: addHours(new Date(), -3),
       });
 
@@ -298,9 +251,7 @@ export class UserService {
           ifoodMerchantId !== String(userToUpdate.ifoodMerchantId || '').trim(),
         ifoodMerchantsChanged:
           JSON.stringify(ifoodMerchants) !==
-          JSON.stringify(
-            this.normalizeIfoodMerchants(userToUpdate.ifoodMerchants),
-          ),
+          JSON.stringify(this.normalizeIfoodMerchants(userToUpdate.ifoodMerchants)),
         isActiveChanged:
           Boolean(changedUser.isActive) !== Boolean(userToUpdate.isActive),
         usesExternalIfoodPdvChanged:
@@ -311,72 +262,6 @@ export class UserService {
     } catch (error) {
       throw error;
     }
-  }
-
-  private resolveUpdatedSaiposToken(
-    receivedToken: string | undefined,
-    currentToken: string | undefined,
-  ): string {
-    if (receivedToken === undefined) {
-      return this.normalizeSaiposToken(currentToken);
-    }
-
-    const normalizedReceivedToken = this.normalizeSaiposToken(receivedToken);
-    const normalizedCurrentToken = this.normalizeSaiposToken(currentToken);
-
-    if (
-      normalizedCurrentToken &&
-      normalizedReceivedToken ===
-        this.maskIntegrationToken(normalizedCurrentToken)
-    ) {
-      return normalizedCurrentToken;
-    }
-
-    return normalizedReceivedToken;
-  }
-
-  private normalizeSaiposToken(token?: string): string {
-    return String(token || '').trim();
-  }
-
-  private resolveUpdatedAnotaAiToken(
-    receivedToken: string | undefined,
-    currentToken: string | undefined,
-  ): string {
-    if (receivedToken === undefined) {
-      return this.normalizeAnotaAiToken(currentToken);
-    }
-
-    const normalizedReceivedToken = this.normalizeAnotaAiToken(receivedToken);
-    const normalizedCurrentToken = this.normalizeAnotaAiToken(currentToken);
-
-    if (
-      normalizedCurrentToken &&
-      normalizedReceivedToken ===
-        this.maskIntegrationToken(normalizedCurrentToken)
-    ) {
-      return normalizedCurrentToken;
-    }
-
-    return normalizedReceivedToken;
-  }
-
-  private normalizeAnotaAiToken(token?: string): string {
-    return String(token || '').trim();
-  }
-
-  private maskIntegrationToken(token?: string): string {
-    const normalizedToken = this.normalizeAnotaAiToken(token);
-
-    if (!normalizedToken) {
-      return '';
-    }
-
-    if (normalizedToken.length <= 10) {
-      return `${normalizedToken.slice(0, 2)}...${normalizedToken.slice(-2)}`;
-    }
-
-    return `${normalizedToken.slice(0, 5)}...${normalizedToken.slice(-6)}`;
   }
 
   private triggerIfoodInitialSync(
@@ -412,20 +297,12 @@ export class UserService {
       .retryPendingImportsForCompany(company.id)
       .then(() =>
         this.logger.log(
-          `ifood_initial_sync_triggered companyId=${company.id} merchants=${this.getActiveMerchantIds(
-            company,
-          )
-            .map((merchantId) => this.maskMerchantId(merchantId))
-            .join(',')}`,
+          `ifood_initial_sync_triggered companyId=${company.id} merchants=${this.getActiveMerchantIds(company).map((merchantId) => this.maskMerchantId(merchantId)).join(',')}`,
         ),
       )
       .catch((error) =>
         this.logger.error(
-          `ifood_initial_sync_failed companyId=${company.id} merchants=${this.getActiveMerchantIds(
-            company,
-          )
-            .map((merchantId) => this.maskMerchantId(merchantId))
-            .join(',')} error=${error?.message || error}`,
+          `ifood_initial_sync_failed companyId=${company.id} merchants=${this.getActiveMerchantIds(company).map((merchantId) => this.maskMerchantId(merchantId)).join(',')} error=${error?.message || error}`,
         ),
       );
   }
@@ -447,8 +324,7 @@ export class UserService {
         merchantId: String(merchant?.merchantId || '').trim(),
         name: String(merchant?.name || '').trim(),
         enabled: merchant?.enabled !== false,
-        pickupAddress:
-          String(merchant?.pickupAddress || '').trim() || undefined,
+        pickupAddress: String(merchant?.pickupAddress || '').trim() || undefined,
       }))
       .filter((merchant) => merchant.merchantId);
   }

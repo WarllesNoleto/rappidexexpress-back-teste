@@ -5,20 +5,6 @@ import {
 } from '../../shared/constants/enums.constants';
 import { UserEntity } from '../../database/entities/user.entity';
 
-function maskIntegrationToken(token?: string): string {
-  const normalizedToken = String(token || '').trim();
-
-  if (!normalizedToken) {
-    return '';
-  }
-
-  if (normalizedToken.length <= 10) {
-    return `${normalizedToken.slice(0, 2)}...${normalizedToken.slice(-2)}`;
-  }
-
-  return `${normalizedToken.slice(0, 5)}...${normalizedToken.slice(-6)}`;
-}
-
 export class UserResult {
   @Expose()
   id: string;
@@ -52,7 +38,7 @@ export class UserResult {
 
   @Expose()
   cityId: string;
-
+  
   @Expose()
   useIfoodIntegration: boolean;
 
@@ -81,48 +67,12 @@ export class UserResult {
   @Expose()
   ifoodOrdersAvailable: number;
 
-  @Expose()
-  anotaAiEnabled: boolean;
-
-  @Expose()
-  anotaAiStoreId?: string;
-
-  @Expose()
-  anotaAiClientId?: string;
-
-  @Expose()
-  anotaAiToken?: string;
-
-  @Expose()
-  anotaAiIgnoreIfoodOrders: boolean;
-
-  @Expose()
-  saiposEnabled: boolean;
-
-  @Expose()
-  saiposStoreId?: string;
-
-  @Expose()
-  saiposMerchantId?: string;
-
-  @Expose()
-  saiposToken?: string;
-
   public static fromEntity(user: UserEntity) {
-    return plainToClass<UserResult, UserResult>(
-      UserResult,
-      {
-        ...user,
-        usesExternalIfoodPdv: Boolean(user?.usesExternalIfoodPdv),
-        anotaAiEnabled: Boolean(user?.anotaAiEnabled),
-        anotaAiToken: maskIntegrationToken(user?.anotaAiToken),
-        saiposEnabled: Boolean(user?.saiposEnabled),
-        saiposToken: maskIntegrationToken(user?.saiposToken),
-        anotaAiIgnoreIfoodOrders: user?.anotaAiIgnoreIfoodOrders !== false,
-      } as UserResult,
-      {
-        excludeExtraneousValues: true,
-      },
-    );
+    return plainToClass<UserResult, UserResult>(UserResult, {
+      ...user,
+      usesExternalIfoodPdv: Boolean(user?.usesExternalIfoodPdv),
+    } as UserResult, {
+      excludeExtraneousValues: true,
+    });
   }
 }

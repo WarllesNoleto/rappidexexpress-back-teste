@@ -485,20 +485,6 @@ export class DeliveryService implements OnModuleInit {
             },
           },
         ),
-        this.deliveryRepository.createCollectionIndex(
-          { anotaAiOrderId: 1 },
-          {
-            name: 'IDX_DELIVERIES_ANOTA_AI_ORDER_ID',
-            unique: true,
-            partialFilterExpression: {
-              anotaAiOrderId: { $type: 'string' },
-            },
-          },
-        ),
-        this.deliveryRepository.createCollectionIndex(
-          { source: 1, externalOrderId: 1 },
-          { name: 'IDX_DELIVERIES_SOURCE_EXTERNAL_ORDER_ID' },
-        ),
       ]);
     } catch (error: any) {
       this.logger.warn(
@@ -1133,12 +1119,6 @@ export class DeliveryService implements OnModuleInit {
       ifoodDisplayId,
       ifoodMerchantId,
       ifoodMerchantName,
-      source,
-      externalOrderId,
-      anotaAiOrderId,
-      anotaAiShortId,
-      integrationOrigin,
-      rawIntegrationPayload,
     } = deliveryData;
 
     let deliveryStatus = status;
@@ -1221,12 +1201,6 @@ export class DeliveryService implements OnModuleInit {
         ifoodMerchantId,
         ifoodMerchantName,
         ifoodImportedAt: ifoodOrderId ? addHours(new Date(), -3) : undefined,
-        source,
-        externalOrderId,
-        anotaAiOrderId,
-        anotaAiShortId,
-        integrationOrigin,
-        rawIntegrationPayload,
         isActive: true,
         createdBy: user.id,
         onCoursedAt,
@@ -1815,12 +1789,6 @@ export class DeliveryService implements OnModuleInit {
       ifoodDispatchSynced: data.ifoodDispatchSynced ?? false,
       ifoodArrivedAtDestinationSynced:
         data.ifoodArrivedAtDestinationSynced ?? false,
-      source: data.source ?? null,
-      externalOrderId: data.externalOrderId ?? null,
-      anotaAiOrderId: data.anotaAiOrderId ?? null,
-      anotaAiShortId: data.anotaAiShortId ?? null,
-      integrationOrigin: data.integrationOrigin ?? null,
-      rawIntegrationPayload: data.rawIntegrationPayload ?? null,
     };
   }
 
