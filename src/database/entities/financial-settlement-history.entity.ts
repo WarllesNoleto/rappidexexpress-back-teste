@@ -39,12 +39,6 @@ export class FinancialSettlementHistoryEntity {
   @Column()
   whatsappPhone: string;
 
-  @Column({ nullable: true })
-  adminWhatsapp?: string;
-
-  @Column({ nullable: true })
-  whatsappPhoneNumberId?: string;
-
   @Column()
   filename: string;
 

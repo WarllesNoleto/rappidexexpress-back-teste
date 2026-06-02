@@ -24,16 +24,4 @@ export class CreateCityDto {
   @IsString()
   @IsOptional()
   pixKey?: string;
-
-  @IsString()
-  @IsOptional()
-  adminWhatsapp?: string;
-
-  @IsString()
-  @IsOptional()
-  whatsappPhoneNumberId?: string;
-
-  @IsString()
-  @IsOptional()
-  whatsappCloudToken?: string;
 }
