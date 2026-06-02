@@ -23,6 +23,15 @@ export class CityResult {
   @Expose()
   pixKey?: string;
 
+  @Expose()
+  adminWhatsapp?: string;
+
+  @Expose()
+  whatsappPhoneNumberId?: string;
+
+  @Expose()
+  whatsappCloudTokenConfigured?: boolean;
+
   static fromEntity(city: CityEntity): CityResult {
     return plainToClass(CityResult, {
       id: city.id?.toHexString?.() ?? `${city.id}`,
@@ -32,6 +41,9 @@ export class CityResult {
       deliveryValue: city.deliveryValue,
       deliveryFeeValue: city.deliveryFeeValue,
       pixKey: city.pixKey,
+      adminWhatsapp: city.adminWhatsapp,
+      whatsappPhoneNumberId: city.whatsappPhoneNumberId,
+      whatsappCloudTokenConfigured: Boolean(String(city.whatsappCloudToken ?? '').trim()),
     });
   }
 }

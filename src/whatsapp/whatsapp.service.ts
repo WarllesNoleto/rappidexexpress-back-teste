@@ -7,41 +7,63 @@ export interface SendDocumentMessageInput {
   message: string;
   pdfBuffer: Buffer;
   filename: string;
+  token?: string;
+  phoneNumberId?: string;
 }
 
 @Injectable()
 export class WhatsappService {
   constructor(private readonly configService: ConfigService) {}
 
-  async sendDocumentMessage({
-    phone,
-    message,
-    pdfBuffer,
-    filename,
-  }: SendDocumentMessageInput) {
-    const token = this.configService.get<string>('WHATSAPP_CLOUD_TOKEN');
-    const phoneNumberId = this.configService.get<string>(
-      'WHATSAPP_PHONE_NUMBER_ID',
-    );
+  resolveDocumentMessageConfig(options?: {
+    token?: string;
+    phoneNumberId?: string;
+  }) {
+    const cityToken = String(options?.token ?? '').trim();
+    const cityPhoneNumberId = String(options?.phoneNumberId ?? '').trim();
+    const globalToken =
+      this.configService.get<string>('WHATSAPP_CLOUD_TOKEN') || '';
+    const globalPhoneNumberId =
+      this.configService.get<string>('WHATSAPP_PHONE_NUMBER_ID') || '';
+    const token = cityToken && cityPhoneNumberId ? cityToken : globalToken;
+    const phoneNumberId =
+      cityToken && cityPhoneNumberId ? cityPhoneNumberId : globalPhoneNumberId;
     const apiVersion =
       this.configService.get<string>('WHATSAPP_CLOUD_API_VERSION') || 'v20.0';
 
     if (!token || !phoneNumberId) {
       throw new InternalServerErrorException(
-        'API de WhatsApp não configurada. Defina WHATSAPP_CLOUD_TOKEN e WHATSAPP_PHONE_NUMBER_ID.',
+        'API de WhatsApp não configurada. Defina token e Phone Number ID da cidade ou configure WHATSAPP_CLOUD_TOKEN e WHATSAPP_PHONE_NUMBER_ID.',
       );
     }
 
-    const mediaId = await this.uploadPdfMedia({
+    return {
       token,
       phoneNumberId,
       apiVersion,
+    };
+  }
+
+  async sendDocumentMessage({
+    phone,
+    message,
+    pdfBuffer,
+    filename,
+    token,
+    phoneNumberId,
+  }: SendDocumentMessageInput) {
+    const config = this.resolveDocumentMessageConfig({ token, phoneNumberId });
+
+    const mediaId = await this.uploadPdfMedia({
+      token: config.token,
+      phoneNumberId: config.phoneNumberId,
+      apiVersion: config.apiVersion,
       pdfBuffer,
       filename,
     });
 
     const response = await axios.post(
-      `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`,
+      `https://graph.facebook.com/${config.apiVersion}/${config.phoneNumberId}/messages`,
       {
         messaging_product: 'whatsapp',
         to: phone,
@@ -54,7 +76,7 @@ export class WhatsappService {
       },
       {
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${config.token}`,
           'Content-Type': 'application/json',
         },
       },

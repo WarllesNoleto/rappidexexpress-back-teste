@@ -36,6 +36,9 @@ type SettlementData = {
   pixKey: string;
   total: number;
   whatsapp: string;
+  adminWhatsapp: string;
+  whatsappPhoneNumberId: string;
+  whatsappCloudToken: string;
   filename: string;
   message: string;
 };
@@ -78,6 +81,8 @@ export class FinancialSettlementService {
       total: settlement.total,
       pixKey: settlement.pixKey,
       whatsappPhone: settlement.whatsapp,
+      whatsappAdminPhone: settlement.adminWhatsapp,
+      whatsappPhoneNumberId: settlement.whatsappPhoneNumberId,
       filename: settlement.filename,
       sentAt: new Date(),
       status: 'pendente',
@@ -89,6 +94,8 @@ export class FinancialSettlementService {
         message: settlement.message,
         pdfBuffer,
         filename: settlement.filename,
+        token: settlement.whatsappCloudToken,
+        phoneNumberId: settlement.whatsappPhoneNumberId,
       });
 
       await this.historyRepository.save({
@@ -172,6 +179,9 @@ export class FinancialSettlementService {
       throw new BadRequestException('Chave PIX não configurada para esta cidade.');
     }
 
+    const whatsappConfig = this.resolveWhatsappConfig(city);
+    const adminWhatsapp = this.sanitizeWhatsapp(city.adminWhatsapp);
+
     const total = deliveries.length * deliveryFeeValue;
     const filename = this.buildFilename(
       establishment.name,
@@ -197,12 +207,28 @@ export class FinancialSettlementService {
       pixKey,
       total,
       whatsapp,
+      adminWhatsapp,
+      whatsappPhoneNumberId: whatsappConfig.phoneNumberId,
+      whatsappCloudToken: whatsappConfig.token,
       filename,
       message: '',
     };
     settlement.message = this.buildWhatsappMessage(settlement);
 
     return settlement;
+  }
+
+  private resolveWhatsappConfig(city: CityEntity) {
+    try {
+      return this.whatsappService.resolveDocumentMessageConfig({
+        token: city.whatsappCloudToken,
+        phoneNumberId: city.whatsappPhoneNumberId,
+      });
+    } catch {
+      throw new BadRequestException(
+        'WhatsApp da cidade não configurado. Configure token e Phone Number ID na tela de Cidades.',
+      );
+    }
   }
 
   private async resolveCity(delivery: DeliveryEntity, establishment: UserEntity) {
