@@ -387,10 +387,54 @@ export class FinancialSettlementService {
         `BT ${color} rg /${font} ${size} Tf ${x} ${y} Td (${this.escapePdfText(value)}) Tj ET`,
       );
     };
+    const polygon = (points: [number, number][], color: string) => {
+      const [firstPoint, ...remainingPoints] = points;
+      ops.push(
+        `q ${color} rg ${firstPoint[0]} ${firstPoint[1]} m ${remainingPoints
+          .map(([x, y]) => `${x} ${y} l`)
+          .join(' ')} h f Q`,
+      );
+    };
+    const logo = (x: number, y: number) => {
+      polygon(
+        [
+          [x + 2, y + 2],
+          [x + 16, y + 2],
+          [x + 23, y + 33],
+          [x + 9, y + 33],
+        ],
+        red,
+      );
+      polygon(
+        [
+          [x + 36, y + 2],
+          [x + 56, y + 2],
+          [x + 45, y + 18],
+          [x + 54, y + 18],
+          [x + 61, y + 33],
+          [x + 39, y + 33],
+          [x + 27, y + 16],
+        ],
+        red,
+      );
+      polygon(
+        [
+          [x + 30, y + 18],
+          [x + 46, y + 44],
+          [x + 43, y + 26],
+          [x + 56, y + 26],
+          [x + 23, y - 2],
+          [x + 34, y + 18],
+        ],
+        yellow,
+      );
+      text('rappidex', x + 72, y + 20, 22, 'F2', dark);
+      text('DELIVERY', x + 74, y + 8, 9, 'F2', red);
+    };
 
     rect(0, 792, 595, 50, yellow);
     rect(0, 782, 595, 10, red);
-    text('Rappidex Express', 40, 812, 18, 'F2', dark);
+    logo(40, 803);
     text('Relatório de Fechamento', 360, 815, 15, 'F2', dark);
     text('Fechamento de entregas do período', 360, 798, 9, 'F1', dark);
     text(
