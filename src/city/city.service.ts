@@ -14,24 +14,24 @@ export class CityService {
   ) {}
 
   async listCities(): Promise<CityResult[]> {
-      const cities = await this.cityRepository.find({
-        order: { name: 'ASC' },
-      });
-      return cities.map(CityResult.fromEntity);
+    const cities = await this.cityRepository.find({
+      order: { name: 'ASC' },
+    });
+    return cities.map(CityResult.fromEntity);
   }
 
-    async createCity(data: CreateCityDto): Promise<CityResult> {
+  async createCity(data: CreateCityDto): Promise<CityResult> {
     const city = await this.cityRepository.save({
       name: data.name,
       state: data.state,
       clientWhatsappMessage: data.clientWhatsappMessage?.trim() || '',
+      deliveryValue: data.deliveryValue?.trim() || '',
     });
 
     return CityResult.fromEntity(city);
   }
 
   async findCity(cityId: string): Promise<CityResult> {
-
     const city = await this.cityRepository.findOne({
       where: { _id: new ObjectId(cityId) },
     });
@@ -59,6 +59,10 @@ export class CityService {
         data.clientWhatsappMessage !== undefined
           ? data.clientWhatsappMessage.trim()
           : city.clientWhatsappMessage,
+      deliveryValue:
+        data.deliveryValue !== undefined
+          ? data.deliveryValue.trim()
+          : city.deliveryValue,
     });
 
     return CityResult.fromEntity(updatedCity);

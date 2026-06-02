@@ -13,4 +13,8 @@ export class UpdateCityDto {
   @IsString()
   @IsOptional()
   clientWhatsappMessage?: string;
+
+  @IsString()
+  @IsOptional()
+  deliveryValue?: string;
 }

@@ -12,4 +12,8 @@ export class CreateCityDto {
   @IsString()
   @IsOptional()
   clientWhatsappMessage?: string;
+
+  @IsString()
+  @IsOptional()
+  deliveryValue?: string;
 }
