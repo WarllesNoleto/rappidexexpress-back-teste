@@ -2047,20 +2047,29 @@ export class DeliveryService implements OnModuleInit {
     //   where['isActive'] = queryParams.isActive ? true : false;
     // }
 
-    if (queryParams.createdIn && queryParams.createdUntil) {
-      const createdAtDateFilter = {
-        $gte: new Date(queryParams.createdIn),
-        $lte: new Date(queryParams.createdUntil),
-      };
-      const createdAtStringFilter = {
-        $gte: queryParams.createdIn,
-        $lte: queryParams.createdUntil,
-      };
+    if (queryParams.createdIn || queryParams.createdUntil) {
+      const dateField =
+        selectedStatuses.length > 0 &&
+        selectedStatuses.every((status) => status === StatusDelivery.FINISHED)
+          ? 'finishedAt'
+          : 'createdAt';
+      const dateFilter: Record<string, Date> = {};
+      const stringFilter: Record<string, string> = {};
+
+      if (queryParams.createdIn) {
+        dateFilter.$gte = new Date(queryParams.createdIn);
+        stringFilter.$gte = queryParams.createdIn;
+      }
+
+      if (queryParams.createdUntil) {
+        dateFilter.$lte = new Date(queryParams.createdUntil);
+        stringFilter.$lte = queryParams.createdUntil;
+      }
 
       // Garante compatibilidade: aceita registros Date (novos) e string (legados).
       where['$or'] = [
-        { createdAt: createdAtDateFilter },
-        { createdAt: createdAtStringFilter },
+        { [dateField]: dateFilter },
+        { [dateField]: stringFilter },
       ];
     }
 

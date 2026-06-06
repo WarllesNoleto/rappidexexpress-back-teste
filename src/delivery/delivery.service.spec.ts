@@ -341,4 +341,46 @@ describe('DeliveryService', () => {
       'merchant-6',
     );
   });
+
+  it('filtra entregas finalizadas por finishedAt com limites inclusivos', () => {
+    const where = (service as any).buildDeliveriesWhere(
+      { type: 'superadmin' },
+      {
+        status: StatusDelivery.FINISHED,
+        createdIn: '2026-06-02T00:00:00.000Z',
+        createdUntil: '2026-06-08T23:59:59.999Z',
+      },
+    );
+
+    expect(where.$or).toEqual([
+      {
+        finishedAt: {
+          $gte: new Date('2026-06-02T00:00:00.000Z'),
+          $lte: new Date('2026-06-08T23:59:59.999Z'),
+        },
+      },
+      {
+        finishedAt: {
+          $gte: '2026-06-02T00:00:00.000Z',
+          $lte: '2026-06-08T23:59:59.999Z',
+        },
+      },
+    ]);
+  });
+
+  it('aplica isoladamente o limite inicial inclusivo do relatório', () => {
+    const where = (service as any).buildDeliveriesWhere(
+      { type: 'superadmin' },
+      {
+        status: StatusDelivery.FINISHED,
+        createdIn: '2026-06-02T00:00:00.000Z',
+      },
+    );
+
+    expect(where.$or).toEqual([
+      { finishedAt: { $gte: new Date('2026-06-02T00:00:00.000Z') } },
+      { finishedAt: { $gte: '2026-06-02T00:00:00.000Z' } },
+    ]);
+  });
+
 });
